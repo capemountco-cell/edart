@@ -21,6 +21,20 @@ pub enum Link {
     Failed(String),
 }
 
+impl Link {
+    /// What a failed MobileDevice call means. The codes are the
+    /// framework's `kAMD…Error` values.
+    pub fn for_error(call: &str, code: u32) -> Link {
+        match code {
+            // Password protected: locked since it was plugged in.
+            0xe800_001a => Link::Locked,
+            // The person tapped Don't Trust, or has not answered yet.
+            0xe800_0095 | 0xe800_0096 => Link::NotPaired,
+            _ => Link::Failed(format!("{call} failed (0x{code:08x})")),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceFacts {
     pub udid: String,
@@ -43,6 +57,26 @@ pub enum DeveloperModeStep {
     Revealed,
     /// The phone accepted and is restarting, or is about to.
     Armed,
+}
+
+/// What asking the phone to turn Developer Mode on led to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DeveloperModeOutcome {
+    /// The phone accepted and restarts by itself.
+    Restarting,
+    /// The phone has a passcode: the switch now shows in Settings and the
+    /// person has to flip it there.
+    UseSettings,
+}
+
+impl DeveloperModeOutcome {
+    pub fn step(self) -> DeveloperModeStep {
+        match self {
+            DeveloperModeOutcome::Restarting => DeveloperModeStep::Armed,
+            DeveloperModeOutcome::UseSettings => DeveloperModeStep::Revealed,
+        }
+    }
 }
 
 /// Whether the phone's developer HID services can be reached.
@@ -376,6 +410,22 @@ mod tests {
         f.device = Some(d);
         assert_eq!(f.phase(), UsbPhase::Untrusted);
         assert!(f.error().unwrap().contains("0xe8000025"));
+    }
+
+    #[test]
+    fn framework_errors_become_a_link_state() {
+        assert_eq!(
+            Link::for_error("AMDeviceStartSession", 0xe800_001a),
+            Link::Locked
+        );
+        assert_eq!(
+            Link::for_error("AMDeviceValidatePairing", 0xe800_0096),
+            Link::NotPaired
+        );
+        assert_eq!(
+            Link::for_error("AMDeviceConnect", 0xe800_0084),
+            Link::Failed("AMDeviceConnect failed (0xe8000084)".into())
+        );
     }
 
     #[test]

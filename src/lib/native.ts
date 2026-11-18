@@ -72,6 +72,47 @@ export type Gesture =
   | { type: "type_text"; text: string }
   | { type: "press_home" };
 
+/** Mirrors `edart_core::usb::readiness::UsbPhase`. */
+export type UsbPhase =
+  | "unsupported"
+  | "hostMissing"
+  | "noDevice"
+  | "restarting"
+  | "untrusted"
+  | "locked"
+  | "oldIos"
+  | "developerModeOff"
+  | "developerModeManual"
+  | "confirmDeveloperMode"
+  | "xcodeMissing"
+  | "notPrepared"
+  | "preparing"
+  | "diskImageMissing"
+  | "serviceUnavailable"
+  | "ready";
+
+/** Mirrors `edart_core::usb::readiness::UsbStatus`. */
+export interface UsbStatus {
+  phase: UsbPhase;
+  deviceName: string | null;
+  iosVersion: string | null;
+  developerMode: boolean | null;
+  coreDeviceVersion: string | null;
+  error: string | null;
+  /** Recent USB events, oldest first. */
+  events: string[];
+}
+
+/** Mirrors `edart_core::usb::readiness::DeveloperModeOutcome`. */
+export type DeveloperModeOutcome = "restarting" | "useSettings";
+
+export const usbStatus = () => call<UsbStatus>("usb_status");
+/** Ask the plugged-in iPhone to turn Developer Mode on. */
+export const usbEnableDeveloperMode = () =>
+  call<DeveloperModeOutcome>("usb_enable_developer_mode");
+/** Connect to the iPhone's developer services. Can take a minute. */
+export const usbPrepare = () => call<void>("usb_prepare");
+
 export const bluetoothStatus = () => call<BluetoothStatus>("bt_status");
 export const startBluetooth = () => call<void>("bt_start");
 export const restartBluetooth = () => call<void>("bt_restart");

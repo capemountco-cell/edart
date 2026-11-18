@@ -12,10 +12,18 @@ mod ble;
 #[cfg(target_os = "macos")]
 mod ble_central;
 
+#[cfg(target_os = "macos")]
+mod usb;
+#[cfg(not(target_os = "macos"))]
+#[path = "usb_stub.rs"]
+mod usb;
+
 use std::sync::Mutex;
 
 use edart_core::gesture::{self, Gesture, Screen, Step, Tuning};
 use edart_core::status::StatusView;
+use edart_core::usb::plan as usb_plan;
+use edart_core::usb::readiness::{route, DeveloperModeOutcome, Route, UsbStatus};
 use tauri::AppHandle;
 
 /// One gesture at a time: two interleaved taps would be nonsense.
@@ -89,16 +97,46 @@ fn open_bluetooth_settings() -> Result<(), String> {
     }
 }
 
-/// Perform a gesture on the iPhone. Returns when the last report is sent.
 #[tauri::command]
-async fn perform(app: AppHandle, gesture: Gesture, screen: Screen) -> Result<(), String> {
-    if !ble::status().subscribed {
-        return Err("No iPhone is connected over Bluetooth yet.".into());
-    }
-    let steps = gesture::plan(&gesture, screen, Tuning::default()).map_err(|e| e.to_string())?;
-    tauri::async_runtime::spawn_blocking(move || run_steps(&app, steps))
+fn usb_status() -> UsbStatus {
+    usb::status()
+}
+
+/// Ask the plugged-in iPhone to turn Developer Mode on.
+#[tauri::command]
+async fn usb_enable_developer_mode() -> Result<DeveloperModeOutcome, String> {
+    tauri::async_runtime::spawn_blocking(usb::enable_developer_mode)
         .await
         .map_err(|e| e.to_string())?
+}
+
+/// Connect to the iPhone's developer services (touch and keyboard).
+#[tauri::command]
+async fn usb_prepare() -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(usb::prepare)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Perform a gesture on the iPhone: over USB when that is ready, else over
+/// Bluetooth. Returns when the last report is sent.
+#[tauri::command]
+async fn perform(app: AppHandle, gesture: Gesture, screen: Screen) -> Result<(), String> {
+    match route(usb::is_ready(), ble::status().subscribed)? {
+        Route::Usb => {
+            let steps = usb_plan::plan(&gesture, screen).map_err(|e| e.to_string())?;
+            tauri::async_runtime::spawn_blocking(move || usb::perform(steps))
+                .await
+                .map_err(|e| e.to_string())?
+        }
+        Route::Bluetooth => {
+            let steps =
+                gesture::plan(&gesture, screen, Tuning::default()).map_err(|e| e.to_string())?;
+            tauri::async_runtime::spawn_blocking(move || run_steps(&app, steps))
+                .await
+                .map_err(|e| e.to_string())?
+        }
+    }
 }
 
 fn run_steps(app: &AppHandle, steps: Vec<Step>) -> Result<(), String> {
@@ -120,6 +158,9 @@ fn run_steps(app: &AppHandle, steps: Vec<Step>) -> Result<(), String> {
 pub fn run() {
     tauri::Builder::default()
         .setup(|_app| {
+            // Watching the cable asks nothing of the user, so it starts
+            // with the app.
+            usb::start();
             // Skip the prompt on first launch; the Setup screen asks with
             // context. Once allowed, start straight away.
             #[cfg(target_os = "macos")]
@@ -137,6 +178,9 @@ pub fn run() {
             bt_restart,
             bt_reach_out,
             open_bluetooth_settings,
+            usb_status,
+            usb_enable_developer_mode,
+            usb_prepare,
             perform
         ])
         .run(tauri::generate_context!())
