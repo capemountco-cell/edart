@@ -44,6 +44,14 @@ fn bt_start(app: AppHandle) -> Result<(), String> {
     }
 }
 
+/// Publish the Bluetooth services again, so a phone with a stale copy
+/// rediscovers them.
+#[tauri::command]
+fn bt_restart(app: AppHandle) -> Result<(), String> {
+    app.run_on_main_thread(ble::restart)
+        .map_err(|e| e.to_string())
+}
+
 /// Perform a gesture on the iPhone. Returns when the last report is sent.
 #[tauri::command]
 async fn perform(app: AppHandle, gesture: Gesture, screen: Screen) -> Result<(), String> {
@@ -85,7 +93,9 @@ pub fn run() {
             }
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![bt_status, bt_start, perform])
+        .invoke_handler(tauri::generate_handler![
+            bt_status, bt_start, bt_restart, perform
+        ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");
 }

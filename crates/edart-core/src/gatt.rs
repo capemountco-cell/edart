@@ -15,6 +15,15 @@
 //!   input, and reports no error. Protocol Mode is the one exception: the
 //!   phone writes it before pairing.
 //! - The service order is cached by iOS; changing it needs a re-pair.
+//!
+//! From iPhone Use (MIT, <https://github.com/YueChen-C/iPhone-use>), the
+//! project both of the above descend from:
+//! - Publish Generic Attribute (0x1801) with Service Changed. An iPhone that
+//!   is already bonded with the Mac (iCloud, Handoff) trusts its cached copy
+//!   of the Mac's services, writes the Control Point and never subscribes.
+//!   Indicating Service Changed makes it rediscover and find the HID service.
+//! - Serve the Report Map on request rather than as a cached value, so its
+//!   encryption requirement is enforced and the phone bonds.
 
 use crate::hid;
 
@@ -24,6 +33,7 @@ pub const PROP_READ: u32 = 0x02;
 pub const PROP_WRITE_NO_RSP: u32 = 0x04;
 pub const PROP_WRITE: u32 = 0x08;
 pub const PROP_NOTIFY: u32 = 0x10;
+pub const PROP_INDICATE: u32 = 0x20;
 
 // Attribute permission bits, numerically equal to `CBAttributePermissions`.
 pub const PERM_READ: u32 = 0x01;
@@ -31,10 +41,12 @@ pub const PERM_WRITE: u32 = 0x02;
 pub const PERM_READ_ENC: u32 = 0x04;
 pub const PERM_WRITE_ENC: u32 = 0x08;
 
+pub const SERVICE_GATT: u16 = 0x1801;
 pub const SERVICE_HID: u16 = 0x1812;
 pub const SERVICE_DEVICE_INFO: u16 = 0x180A;
 pub const SERVICE_BATTERY: u16 = 0x180F;
 
+pub const CHAR_SERVICE_CHANGED: u16 = 0x2A05;
 pub const CHAR_HID_INFO: u16 = 0x2A4A;
 pub const CHAR_REPORT_MAP: u16 = 0x2A4B;
 pub const CHAR_CONTROL_POINT: u16 = 0x2A4C;
@@ -56,6 +68,9 @@ pub const HID_INFORMATION: [u8; 4] = [0x11, 0x01, 0x00, 0x02];
 /// Vendor ID source 2 (USB), vendor 0xFFFF, product 0x0001, version 0x0001.
 pub const PNP_ID: [u8; 7] = [0x02, 0xFF, 0xFF, 0x00, 0x01, 0x00, 0x01];
 pub const MANUFACTURER: &str = "Edart";
+
+/// Service Changed value: "everything from handle 0x0010 to the end".
+pub const SERVICE_CHANGED_ALL: [u8; 4] = [0x10, 0x00, 0xFF, 0xFF];
 
 /// The name the iPhone shows in its Bluetooth device list.
 pub const ADVERTISED_NAME: &str = "Edart";
@@ -114,10 +129,19 @@ fn input_report(id: u8) -> CharSpec {
     }
 }
 
-/// The services to publish, in publishing order. GATT (0x1801) is not here:
-/// CoreBluetooth provides it.
+/// The services to publish, in publishing order.
 pub fn services() -> Vec<ServiceSpec> {
     vec![
+        ServiceSpec {
+            uuid: SERVICE_GATT,
+            characteristics: vec![CharSpec {
+                uuid: CHAR_SERVICE_CHANGED,
+                properties: PROP_INDICATE,
+                permissions: PERM_READ,
+                value: Value::None,
+                report: None,
+            }],
+        },
         ServiceSpec {
             uuid: SERVICE_HID,
             characteristics: vec![
@@ -132,7 +156,8 @@ pub fn services() -> Vec<ServiceSpec> {
                     uuid: CHAR_REPORT_MAP,
                     properties: PROP_READ,
                     permissions: PERM_READ_ENC,
-                    value: Value::Static(hid::REPORT_MAP.to_vec()),
+                    // Served on request: a cached value may skip encryption.
+                    value: Value::Dynamic(hid::REPORT_MAP.to_vec()),
                     report: None,
                 },
                 CharSpec {
@@ -216,8 +241,25 @@ mod tests {
     }
 
     #[test]
-    fn hid_service_comes_first() {
-        assert_eq!(services()[0].uuid, SERVICE_HID);
+    fn service_changed_comes_first_then_hid() {
+        let s = services();
+        assert_eq!(s[0].uuid, SERVICE_GATT);
+        assert_eq!(s[0].characteristics[0].uuid, CHAR_SERVICE_CHANGED);
+        assert_eq!(s[0].characteristics[0].properties, PROP_INDICATE);
+        assert_eq!(s[1].uuid, SERVICE_HID);
+    }
+
+    #[test]
+    fn encrypted_characteristics_are_never_cached_values() {
+        // CoreBluetooth answers cached values itself; encryption must be
+        // enforced on every request, so encrypted ones are served live.
+        for s in services() {
+            for c in s.characteristics {
+                if c.permissions & (PERM_READ_ENC | PERM_WRITE_ENC) != 0 {
+                    assert!(!matches!(c.value, Value::Static(_)), "{:04X}", c.uuid);
+                }
+            }
+        }
     }
 
     #[test]

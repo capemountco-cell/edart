@@ -14,3 +14,5 @@ pub fn status() -> BluetoothStatus {
 pub fn send(_report_id: u8, _payload: &[u8]) -> bool {
     false
 }
+
+pub fn restart() {}
