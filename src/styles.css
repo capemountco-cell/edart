@@ -158,6 +158,10 @@ h1 {
 .status-connected .dot {
   background: var(--ok);
 }
+.status-pairing .dot {
+  background: var(--warn);
+  animation: pulse 1.6s ease-in-out infinite;
+}
 .status-waitingForPhone .dot {
   background: var(--ok);
   animation: pulse 1.6s ease-in-out infinite;

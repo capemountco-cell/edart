@@ -145,6 +145,7 @@ define_class!(
             manager: &CBPeripheralManager,
             requests: &NSArray<CBATTRequest>,
         ) {
+            update_status(|s| s.phone_seen = true);
             // Nothing to store: LED state and control-point writes carry no
             // input. Answer once for the whole batch, as CoreBluetooth wants.
             if let Some(first) = requests.firstObject() {
@@ -184,7 +185,11 @@ pub fn start(mtm: MainThreadMarker) {
         if cell.borrow().is_some() {
             return;
         }
-        update_status(|s| s.state = "unknown".into());
+        let mac_name = computer_name();
+        update_status(|s| {
+            s.state = "unknown".into();
+            s.mac_name = mac_name;
+        });
         let delegate = Delegate::new(mtm);
         let manager = unsafe {
             CBPeripheralManager::initWithDelegate_queue(
@@ -235,6 +240,7 @@ fn on_state(manager: &CBPeripheralManager) {
         s.published = false;
         s.advertising = false;
         s.subscribed = false;
+        s.phone_seen = false;
         s.failed_services.clear();
         s.error = None;
     });
@@ -378,6 +384,7 @@ fn role_of(p: &Peripheral, ch: &CBCharacteristic) -> Role {
 }
 
 fn on_read(manager: &CBPeripheralManager, request: &CBATTRequest) {
+    update_status(|s| s.phone_seen = true);
     let value = PERIPHERAL.with(|cell| {
         let borrow = cell.borrow();
         let p = borrow.as_ref()?;
@@ -422,7 +429,13 @@ fn on_subscription(central: &CBCentral, ch: &CBCharacteristic, subscribed: bool)
         Some(p.subscribers.values().any(|s| !s.is_empty()))
     });
     if let Some(any) = any {
-        update_status(|s| s.subscribed = any);
+        update_status(|s| {
+            // Losing the last subscriber means the phone went away.
+            if s.subscribed && !any {
+                s.phone_seen = false;
+            }
+            s.subscribed = any;
+        });
     }
 }
 
@@ -481,4 +494,13 @@ fn drain() {
 pub fn already_allowed() -> bool {
     use objc2_core_bluetooth::{CBManager, CBManagerAuthorization};
     unsafe { CBManager::authorization_class() == CBManagerAuthorization::AllowedAlways }
+}
+
+/// The Mac's computer name ("Nick's MacBook"), which is what the iPhone
+/// shows in its Bluetooth device list.
+#[allow(deprecated)] // NSHost still answers this; the replacement needs SystemConfiguration.
+fn computer_name() -> Option<String> {
+    objc2_foundation::NSHost::currentHost()
+        .localizedName()
+        .map(|n| n.to_string())
 }

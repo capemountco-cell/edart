@@ -21,6 +21,8 @@ const DEMO: BluetoothStatus = {
   published: true,
   advertising: true,
   subscribed: true,
+  phoneSeen: true,
+  macName: "Nick’s MacBook",
   failedServices: [],
   error: null,
 };
@@ -59,7 +61,8 @@ export function App() {
   }, [refresh]);
 
   const phase = status?.phase ?? (nativeAvailable() ? "starting" : "unsupported");
-  const copy = phaseCopy[phase];
+  const mac = status?.macName ?? "your Mac’s name";
+  const copy = phaseCopy(phase, mac);
   const connected = phase === "connected";
 
   const turnOn = async () => {
@@ -129,8 +132,11 @@ export function App() {
             <li>
               <span className="num">2</span>
               <div>
-                <strong>Pair with Edart</strong>
-                <span>In AssistiveTouch, open Devices › Bluetooth Devices and tap “Edart”.</span>
+                <strong>Pair with this Mac</strong>
+                <span>
+                  In AssistiveTouch, open Devices › Bluetooth Devices and tap “{mac}”, then tap Pair.
+                  The iPhone shows the Mac’s name, not “Edart”. Don’t pair from Settings › Bluetooth.
+                </span>
               </div>
             </li>
             <li>

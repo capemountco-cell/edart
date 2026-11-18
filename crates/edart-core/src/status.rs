@@ -16,6 +16,12 @@ pub struct BluetoothStatus {
     pub advertising: bool,
     /// An iPhone is listening to at least one input report.
     pub subscribed: bool,
+    /// An iPhone has read or written one of Edart's characteristics: it
+    /// found Edart and is pairing, even if it has not subscribed yet.
+    pub phone_seen: bool,
+    /// The name the iPhone lists Edart under: the Mac's computer name, not
+    /// "Edart" (iOS shows the device, not the app).
+    pub mac_name: Option<String>,
     /// Services macOS refused, by UUID.
     pub failed_services: Vec<String>,
     /// The last error worth showing, if any.
@@ -33,6 +39,7 @@ pub enum Phase {
     Starting,
     Broken,
     WaitingForPhone,
+    Pairing,
     Connected,
 }
 
@@ -53,6 +60,8 @@ impl BluetoothStatus {
         }
         if self.subscribed {
             Phase::Connected
+        } else if self.phone_seen {
+            Phase::Pairing
         } else if self.published && self.advertising {
             Phase::WaitingForPhone
         } else if self.published && self.error.is_some() {
@@ -98,6 +107,8 @@ mod tests {
         assert_eq!(BluetoothStatus::default().phase(), Phase::Unsupported);
         let mut s = on();
         assert_eq!(s.phase(), Phase::WaitingForPhone);
+        s.phone_seen = true;
+        assert_eq!(s.phase(), Phase::Pairing);
         s.subscribed = true;
         assert_eq!(s.phase(), Phase::Connected);
         s.state = "unauthorized".into();
