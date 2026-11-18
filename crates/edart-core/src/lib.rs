@@ -8,3 +8,4 @@ pub mod gatt;
 pub mod gesture;
 pub mod hid;
 pub mod status;
+pub mod usb;
