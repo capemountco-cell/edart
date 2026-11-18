@@ -75,6 +75,7 @@ export type Gesture =
 export const bluetoothStatus = () => call<BluetoothStatus>("bt_status");
 export const startBluetooth = () => call<void>("bt_start");
 export const restartBluetooth = () => call<void>("bt_restart");
+export const reachOut = () => call<void>("bt_reach_out");
 export const openBluetoothSettings = () =>
   call<void>("open_bluetooth_settings");
 export const perform = (gesture: Gesture, screen: Screen) =>

@@ -9,6 +9,8 @@ mod ble;
 #[cfg(not(target_os = "macos"))]
 #[path = "ble_stub.rs"]
 mod ble;
+#[cfg(target_os = "macos")]
+mod ble_central;
 
 use std::sync::Mutex;
 
@@ -33,6 +35,7 @@ fn bt_start(app: AppHandle) -> Result<(), String> {
         app.run_on_main_thread(|| {
             if let Some(mtm) = objc2::MainThreadMarker::new() {
                 ble::start(mtm);
+                ble_central::start(mtm);
             }
         })
         .map_err(|e| e.to_string())
@@ -50,6 +53,22 @@ fn bt_start(app: AppHandle) -> Result<(), String> {
 fn bt_restart(app: AppHandle) -> Result<(), String> {
     app.run_on_main_thread(ble::restart)
         .map_err(|e| e.to_string())
+}
+
+/// Connect to iPhones already linked to this Mac, from the Mac side.
+#[tauri::command]
+fn bt_reach_out(app: AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        app.run_on_main_thread(ble_central::reach_out)
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        ble::reach_out();
+        Err("Bluetooth control needs macOS.".into())
+    }
 }
 
 /// Open System Settings › Bluetooth. macOS refuses a phone's pairing
@@ -107,6 +126,7 @@ pub fn run() {
             if ble::already_allowed() {
                 if let Some(mtm) = objc2::MainThreadMarker::new() {
                     ble::start(mtm);
+                    ble_central::start(mtm);
                 }
             }
             Ok(())
@@ -115,6 +135,7 @@ pub fn run() {
             bt_status,
             bt_start,
             bt_restart,
+            bt_reach_out,
             open_bluetooth_settings,
             perform
         ])
