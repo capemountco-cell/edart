@@ -250,6 +250,17 @@ button:focus-visible {
   border-top: 1px solid var(--hairline);
 }
 
+.steps li > div {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-action {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 18px;
+}
+
 .steps strong {
   display: block;
   font-size: 15px;

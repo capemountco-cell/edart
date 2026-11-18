@@ -149,7 +149,10 @@ pub fn services() -> Vec<ServiceSpec> {
                     uuid: CHAR_HID_INFO,
                     properties: PROP_READ,
                     permissions: PERM_READ,
-                    value: Value::Static(HID_INFORMATION.to_vec()),
+                    // Served on request so the first, unencrypted read shows
+                    // up in the log: proof the phone reached Edart before
+                    // any pairing.
+                    value: Value::Dynamic(HID_INFORMATION.to_vec()),
                     report: None,
                 },
                 CharSpec {

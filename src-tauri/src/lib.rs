@@ -52,6 +52,24 @@ fn bt_restart(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Open System Settings › Bluetooth. macOS refuses a phone's pairing
+/// request when nothing is there to handle it; with this pane open, it asks.
+#[tauri::command]
+fn open_bluetooth_settings() -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg("x-apple.systempreferences:com.apple.BluetoothSettings")
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("Bluetooth settings are a macOS feature.".into())
+    }
+}
+
 /// Perform a gesture on the iPhone. Returns when the last report is sent.
 #[tauri::command]
 async fn perform(app: AppHandle, gesture: Gesture, screen: Screen) -> Result<(), String> {
@@ -94,7 +112,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            bt_status, bt_start, bt_restart, perform
+            bt_status,
+            bt_start,
+            bt_restart,
+            open_bluetooth_settings,
+            perform
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");

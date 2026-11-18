@@ -4,6 +4,7 @@ import {
   bluetoothStatus,
   nativeAvailable,
   perform,
+  openBluetoothSettings,
   restartBluetooth,
   startBluetooth,
   type BluetoothStatus,
@@ -117,6 +118,18 @@ export function App() {
     }
   };
 
+  const openSettings = async () => {
+    setMessage(null);
+    try {
+      await openBluetoothSettings();
+    } catch (cause) {
+      setMessage({
+        kind: "error",
+        text: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  };
+
   const copyLog = async () => {
     const text = (status?.events ?? []).join("\n");
     try {
@@ -194,29 +207,48 @@ export function App() {
 
         <section aria-labelledby="steps-title">
           <h2 id="steps-title" className="eyebrow">
-            On your iPhone
+            Pair in four steps
           </h2>
           <ol className="card steps">
             <li>
               <span className="num">1</span>
               <div>
-                <strong>Turn on AssistiveTouch</strong>
-                <span>Settings › Accessibility › Touch › AssistiveTouch.</span>
+                <strong>On this Mac, open Bluetooth settings</strong>
+                <span>
+                  Keep the window open while pairing. Without it, macOS quietly
+                  refuses the iPhone’s pairing request.
+                </span>
               </div>
+              <button
+                type="button"
+                className="secondary step-action"
+                onClick={() => void openSettings()}
+              >
+                Open
+              </button>
             </li>
             <li>
               <span className="num">2</span>
               <div>
-                <strong>Pair with this Mac</strong>
-                <span>
-                  In AssistiveTouch, open Devices › Bluetooth Devices and tap “
-                  {mac}”, then tap Pair. The iPhone shows the Mac’s name, not
-                  “Edart”. Don’t pair from Settings › Bluetooth.
-                </span>
+                <strong>On the iPhone, turn on AssistiveTouch</strong>
+                <span>Settings › Accessibility › Touch › AssistiveTouch.</span>
               </div>
             </li>
             <li>
               <span className="num">3</span>
+              <div>
+                <strong>Pair with “{mac}”</strong>
+                <span>
+                  In AssistiveTouch, open Devices › Bluetooth Devices and tap
+                  it, then accept Pair on both devices. If it already says
+                  Connected, tap ⓘ › Forget This Device first. The iPhone shows
+                  the Mac’s name, not “Edart”, and pairing from Settings ›
+                  Bluetooth won’t work.
+                </span>
+              </div>
+            </li>
+            <li>
+              <span className="num">4</span>
               <div>
                 <strong>Try it below</strong>
                 <span>
