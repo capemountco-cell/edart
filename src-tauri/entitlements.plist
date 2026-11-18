@@ -14,5 +14,16 @@
       The app is not sandboxed by default: a sandbox is required for the Mac
       App Store and gets in the way for apps distributed as a .dmg.
     -->
+
+    <!--
+      USB control loads Xcode's CoreDevice.framework at runtime
+      (/Library/Developer/PrivateFrameworks). Under the hardened runtime,
+      library validation only admits code signed by the same team or by
+      Apple as part of the OS; this app is ad-hoc signed and Xcode's
+      frameworks are not OS components, so without this the dlopen is
+      refused and USB control cannot start.
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
 </dict>
 </plist>
