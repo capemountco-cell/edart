@@ -1,90 +1,298 @@
+/*
+ * Edart's look: pure black, frosted panels with faint white hairlines,
+ * white pill buttons with a soft glow. Every control is at least 44px.
+ * Tokens match the design canvas.
+ */
 :root {
-  color-scheme: light dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
-  font-size: 14px;
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", system-ui, sans-serif;
+  font-size: 15px;
   line-height: 1.45;
+  letter-spacing: -0.01em;
   -webkit-font-smoothing: antialiased;
-  --text: #1d1d20;
-  --muted: #6e6e7a;
-  --surface: #fbfbfd;
-  --accent: #2f6fd0;
+
+  --ground: #000;
+  --text: #fff;
+  --text-2: rgba(255, 255, 255, 0.72);
+  --text-3: rgba(255, 255, 255, 0.6);
+  --panel: rgba(255, 255, 255, 0.04);
+  --panel-strong: rgba(255, 255, 255, 0.08);
+  --hairline: rgba(255, 255, 255, 0.08);
+  --hairline-strong: rgba(255, 255, 255, 0.14);
+  --ok: #34d399;
+  --ok-text: #a7f3d0;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --bad-text: #fecaca;
+  --radius-card: 24px;
+  --glow: 0 10px 40px -10px rgba(255, 255, 255, 0.4);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #f2f2f5;
-    --muted: #a2a2ad;
-    --surface: #1c1c1f;
-    --accent: #62a0f0;
-  }
+* {
+  box-sizing: border-box;
 }
 
 body {
   margin: 0;
-  background: var(--surface);
+  background: var(--ground);
   color: var(--text);
   /* A desktop window is not a document. Text meant to be copied opts back in. */
   user-select: none;
   cursor: default;
 }
 
-.app {
+button {
+  font: inherit;
+  letter-spacing: inherit;
+}
+
+.page {
+  min-height: 100vh;
+  padding: 40px 20px 56px;
+  display: flex;
+  justify-content: center;
+}
+
+.column {
+  width: 100%;
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.intro {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 520px;
-  margin: 0 auto;
-  padding: 64px 24px;
+}
+
+.wordmark {
+  align-self: flex-start;
+  background: #fff;
+  color: #000;
+  font-family: "Anton", "Impact", "Haettenschweiler", "Arial Narrow Bold", sans-serif;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  padding: 6px 8px 5px;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+
+.intro .eyebrow {
+  margin: 4px 0 0;
 }
 
 h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: clamp(32px, 6vw, 44px);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.dim {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.lede {
+  margin: 0;
+  max-width: 540px;
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+.card {
+  border-radius: var(--radius-card);
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+}
+
+/* Status */
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+}
+
+.status-text {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.status h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
   font-weight: 600;
 }
 
-p {
+.status p {
   margin: 0;
+  color: var(--text-2);
 }
 
-.muted {
-  color: var(--muted);
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--text-3);
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 6px;
 }
 
-.error {
-  color: #c2543f;
+.status-connected {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.06);
+}
+.status-connected .dot {
+  background: var(--ok);
+}
+.status-waitingForPhone .dot {
+  background: var(--ok);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.status-needsPermission .dot,
+.status-bluetoothOff .dot,
+.status-notStarted .dot {
+  background: var(--warn);
+}
+.status-broken .dot {
+  background: var(--bad);
 }
 
-.row {
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Buttons */
+.primary,
+.secondary {
+  min-height: 52px;
+  padding: 0 24px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.primary {
+  border: 0;
+  background: #fff;
+  color: #000;
+  box-shadow: var(--glow);
+}
+
+.secondary {
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-strong);
+  color: var(--text);
+}
+
+.primary:active:not(:disabled),
+.secondary:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.secondary:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+/* Steps */
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 8px 20px;
+}
+
+.steps li {
   display: flex;
-  gap: 8px;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 14px 0;
 }
 
-input,
-button {
-  font: inherit;
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  background: transparent;
-  color: inherit;
+.steps li + li {
+  border-top: 1px solid var(--hairline);
 }
 
-input {
-  flex: 1;
+.steps strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.steps span:not(.num) {
+  color: var(--text-2);
+  font-size: 14px;
+}
+
+.num {
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  border: 1px solid var(--hairline-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+/* Tests */
+.tests {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 16px;
+}
+
+.fine {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+.fine.ok {
+  color: var(--ok-text);
+}
+
+.fine.error {
+  color: var(--bad-text);
   user-select: text;
 }
 
-button {
-  background: var(--accent);
-  border-color: transparent;
-  color: #ffffff;
-}
-
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
 }

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      Merged into the app's Info.plist by Tauri.
+      macOS kills the app outright (no error, no prompt) the first time it
+      touches Bluetooth if this description is missing.
+    -->
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Edart acts as a Bluetooth mouse and keyboard so you and your AI agent can tap and type on your iPhone.</string>
+</dict>
+</plist>

@@ -22,3 +22,8 @@ tauri = { version = "2", features = [] }
 [features]
 # Turned on by `tauri build`. Serves the bundled frontend instead of devUrl.
 custom-protocol = ["tauri/custom-protocol"]
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-core-bluetooth = { version = "0.3.2", default-features = false, features = ["std", "alloc", "bitflags", "dispatch2", "CBPeripheralManager", "CBManager", "CBAttribute", "CBCharacteristic", "CBService", "CBDescriptor", "CBUUID", "CBATTRequest", "CBCentral", "CBPeer", "CBAdvertisementData", "CBError"] }
+objc2-foundation = "0.3.2"
