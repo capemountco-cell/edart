@@ -26,6 +26,7 @@ export type Phase =
   | "starting"
   | "broken"
   | "waitingForPhone"
+  | "pairing"
   | "connected";
 
 /** Mirrors `edart_core::status::StatusView`. */
@@ -36,6 +37,8 @@ export interface BluetoothStatus {
   published: boolean;
   advertising: boolean;
   subscribed: boolean;
+  phoneSeen: boolean;
+  macName: string | null;
   failedServices: string[];
   error: string | null;
 }
