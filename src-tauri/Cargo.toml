@@ -24,6 +24,7 @@ tauri = { version = "2", features = [] }
 custom-protocol = ["tauri/custom-protocol"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
+block2 = "0.6.2"
 objc2 = "0.6.5"
 objc2-core-bluetooth = { version = "0.3.2", default-features = false, features = ["std", "alloc", "bitflags", "dispatch2", "CBPeripheralManager", "CBManager", "CBAttribute", "CBCharacteristic", "CBService", "CBDescriptor", "CBUUID", "CBATTRequest", "CBCentral", "CBPeer", "CBAdvertisementData", "CBError", "CBCentralManager", "CBPeripheral"] }
 objc2-foundation = "0.3.2"

@@ -178,6 +178,56 @@ h1 {
   background: var(--bad);
 }
 
+/* USB status: the same card, coloured by the USB phase. */
+.usb-ready {
+  border-color: rgba(52, 211, 153, 0.3);
+  background: rgba(52, 211, 153, 0.06);
+}
+.usb-ready .dot {
+  background: var(--ok);
+}
+.usb-preparing .dot,
+.usb-restarting .dot {
+  background: var(--warn);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+.usb-untrusted .dot,
+.usb-locked .dot,
+.usb-developerModeOff .dot,
+.usb-developerModeManual .dot,
+.usb-confirmDeveloperMode .dot,
+.usb-notPrepared .dot {
+  background: var(--warn);
+}
+.usb-hostMissing .dot,
+.usb-oldIos .dot,
+.usb-xcodeMissing .dot,
+.usb-diskImageMissing .dot,
+.usb-serviceUnavailable .dot {
+  background: var(--bad);
+}
+
+/* The Bluetooth status inside its collapsed section: no second card. */
+.status.inner {
+  padding: 16px 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.status h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.steps.inner {
+  padding: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.intro-note {
+  margin: 0 0 16px;
+}
+
 @keyframes pulse {
   50% {
     opacity: 0.35;
@@ -261,6 +311,30 @@ button:focus-visible {
   padding: 0 18px;
 }
 
+/* A step's own button sits under its text, so it fits a 400px window. */
+.step-button {
+  display: block;
+  margin-top: 12px;
+  min-height: 44px;
+  padding: 0 18px;
+}
+
+.steps li.done .num {
+  border-color: rgba(52, 211, 153, 0.4);
+  background: rgba(52, 211, 153, 0.12);
+  color: var(--ok-text);
+}
+
+.steps li.current .num {
+  background: #fff;
+  border-color: #fff;
+  color: #000;
+}
+
+.steps li.todo {
+  opacity: 0.55;
+}
+
 .steps strong {
   display: block;
   font-size: 15px;
@@ -331,6 +405,15 @@ button:focus-visible {
 
 .details[open] summary::before {
   transform: rotate(90deg);
+}
+
+.log-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .log {

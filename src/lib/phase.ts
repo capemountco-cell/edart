@@ -1,4 +1,4 @@
-import type { Phase } from "./native";
+import type { Phase, UsbPhase } from "./native";
 
 /**
  * Headline copy for each phase. The phase itself is decided in Rust.
@@ -58,5 +58,143 @@ export function phaseCopy(
         title: "iPhone connected",
         detail: "Edart can tap, swipe and type on your iPhone.",
       };
+  }
+}
+
+/** Headline copy for each step of the USB setup. The phase is decided in Rust. */
+export function usbPhaseCopy(
+  phase: UsbPhase,
+  phone: string,
+): { title: string; detail: string } {
+  switch (phase) {
+    case "unsupported":
+      return {
+        title: "Needs a Mac",
+        detail: "USB control only works in the Mac app.",
+      };
+    case "hostMissing":
+      return {
+        title: "This Mac can’t talk to iPhones",
+        detail:
+          "macOS’s device framework didn’t load. Update macOS, then reopen Edart.",
+      };
+    case "noDevice":
+      return {
+        title: "Plug in your iPhone",
+        detail: "Connect it to this Mac with a USB cable and unlock it.",
+      };
+    case "restarting":
+      return {
+        title: "Your iPhone is restarting",
+        detail:
+          "Keep the cable in. When it’s back, unlock it and tap Turn On when it asks about Developer Mode.",
+      };
+    case "untrusted":
+      return {
+        title: "Tap Trust on your iPhone",
+        detail:
+          "Unlock the iPhone, tap Trust and enter its passcode. No prompt? Unplug the cable and plug it in again.",
+      };
+    case "locked":
+      return {
+        title: "Unlock your iPhone",
+        detail: "It has been locked since it was plugged in.",
+      };
+    case "oldIos":
+      return {
+        title: "This iPhone needs iOS 17 or later",
+        detail:
+          "USB control uses services that older versions of iOS don’t have. Bluetooth below may still work.",
+      };
+    case "developerModeOff":
+      return {
+        title: "Turn on Developer Mode",
+        detail: `${phone} only accepts touches from a Mac in Developer Mode. Edart can switch it on; the iPhone restarts once.`,
+      };
+    case "developerModeManual":
+      return {
+        title: "Turn on Developer Mode in Settings",
+        detail:
+          "On the iPhone, open Settings › Privacy & Security › Developer Mode, switch it on and tap Restart. After the restart, tap Turn On and enter the passcode.",
+      };
+    case "confirmDeveloperMode":
+      return {
+        title: "Confirm on your iPhone",
+        detail:
+          "Unlock the iPhone, tap Turn On when it asks about Developer Mode, and enter the passcode.",
+      };
+    case "xcodeMissing":
+      return {
+        title: "Install Xcode",
+        detail:
+          "Edart reaches the iPhone through Xcode’s device service. Install Xcode from the App Store, open it once, then come back.",
+      };
+    case "notPrepared":
+      return {
+        title: "Almost there",
+        detail:
+          "Connect to the iPhone’s touch and keyboard services. Keep the iPhone unlocked. The first time can take a minute.",
+      };
+    case "preparing":
+      return {
+        title: "Connecting…",
+        detail: "Keep the iPhone unlocked. The first time can take a minute.",
+      };
+    case "diskImageMissing":
+      return {
+        title: "The iPhone’s developer tools aren’t loaded",
+        detail:
+          "Open Xcode, choose Window › Devices and Simulators, select the iPhone and wait until it’s ready. Then connect again.",
+      };
+    case "serviceUnavailable":
+      return {
+        title: "Couldn’t reach the iPhone’s touch service",
+        detail: "Unlock the iPhone and connect again.",
+      };
+    case "ready":
+      return {
+        title: "iPhone connected",
+        detail: `Edart can tap, swipe and type on ${phone} over USB.`,
+      };
+  }
+}
+
+export type StepState = "done" | "current" | "todo";
+
+/**
+ * Where each of the four setup steps stands: trust, Developer Mode,
+ * restart and confirm, connect.
+ */
+export function usbStepStates(
+  phase: UsbPhase,
+): [StepState, StepState, StepState, StepState] {
+  const upTo = (current: number): StepState[] =>
+    [0, 1, 2, 3].map((i) =>
+      i < current ? "done" : i === current ? "current" : "todo",
+    );
+  const at = (current: number) =>
+    upTo(current) as [StepState, StepState, StepState, StepState];
+  switch (phase) {
+    case "unsupported":
+    case "hostMissing":
+    case "noDevice":
+    case "untrusted":
+    case "locked":
+    case "oldIos":
+      return at(0);
+    case "developerModeOff":
+      return at(1);
+    case "developerModeManual":
+    case "restarting":
+    case "confirmDeveloperMode":
+      return at(2);
+    case "xcodeMissing":
+    case "notPrepared":
+    case "preparing":
+    case "diskImageMissing":
+    case "serviceUnavailable":
+      return at(3);
+    case "ready":
+      return at(4);
   }
 }
