@@ -46,7 +46,7 @@ fn update_status(f: impl FnOnce(&mut BluetoothStatus)) {
 static STARTED: OnceLock<Instant> = OnceLock::new();
 
 /// Add a line to the Details log, stamped with seconds since start.
-fn log(message: impl AsRef<str>) {
+pub(crate) fn log(message: impl AsRef<str>) {
     let t = STARTED.get_or_init(Instant::now).elapsed().as_secs_f32();
     let line = format!("{t:7.1}s  {}", message.as_ref());
     update_status(|s| s.log(line));
@@ -435,6 +435,8 @@ fn start_advertising() {
         unsafe { p.manager.startAdvertising(Some(&data)) };
     });
     update_status(|s| s.published = true);
+    // With the services up, connect to linked iPhones from the Mac side.
+    crate::ble_central::reach_out();
 }
 
 fn same(a: &CBCharacteristic, b: &CBMutableCharacteristic) -> bool {

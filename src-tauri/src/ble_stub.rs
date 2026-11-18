@@ -16,3 +16,5 @@ pub fn send(_report_id: u8, _payload: &[u8]) -> bool {
 }
 
 pub fn restart() {}
+
+pub fn reach_out() {}

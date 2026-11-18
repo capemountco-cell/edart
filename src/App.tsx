@@ -5,6 +5,7 @@ import {
   nativeAvailable,
   perform,
   openBluetoothSettings,
+  reachOut,
   restartBluetooth,
   startBluetooth,
   type BluetoothStatus,
@@ -118,6 +119,23 @@ export function App() {
     }
   };
 
+  const connectFromMac = async () => {
+    setMessage(null);
+    try {
+      await reachOut();
+      setMessage({
+        kind: "ok",
+        text: "Asked the Mac to connect to your iPhone. Check Details.",
+      });
+      await refresh();
+    } catch (cause) {
+      setMessage({
+        kind: "error",
+        text: cause instanceof Error ? cause.message : String(cause),
+      });
+    }
+  };
+
   const openSettings = async () => {
     setMessage(null);
     try {
@@ -201,6 +219,15 @@ export function App() {
               onClick={() => void restart()}
             >
               Restart Bluetooth
+            </button>
+          )}
+          {(phase === "waitingForPhone" || phase === "pairing") && (
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => void connectFromMac()}
+            >
+              Connect from Mac
             </button>
           )}
         </section>
