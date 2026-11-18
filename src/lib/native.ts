@@ -17,4 +17,45 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
   return invoke<T>(command, args);
 }
 
-export const greet = (name: string) => call<string>("greet", { name });
+/** Mirrors `edart_core::status::Phase`. */
+export type Phase =
+  | "unsupported"
+  | "notStarted"
+  | "needsPermission"
+  | "bluetoothOff"
+  | "starting"
+  | "broken"
+  | "waitingForPhone"
+  | "connected";
+
+/** Mirrors `edart_core::status::StatusView`. */
+export interface BluetoothStatus {
+  phase: Phase;
+  supported: boolean;
+  state: string;
+  published: boolean;
+  advertising: boolean;
+  subscribed: boolean;
+  failedServices: string[];
+  error: string | null;
+}
+
+/** Mirrors `edart_core::gesture::Screen`. */
+export interface Screen {
+  width: number;
+  height: number;
+}
+
+/** Mirrors `edart_core::gesture::Gesture` (serde tag "type"). */
+export type Gesture =
+  | { type: "tap"; x: number; y: number }
+  | { type: "double_tap"; x: number; y: number }
+  | { type: "long_press"; x: number; y: number; ms?: number }
+  | { type: "swipe"; from_x: number; from_y: number; to_x: number; to_y: number; ms?: number }
+  | { type: "type_text"; text: string }
+  | { type: "press_home" };
+
+export const bluetoothStatus = () => call<BluetoothStatus>("bt_status");
+export const startBluetooth = () => call<void>("bt_start");
+export const perform = (gesture: Gesture, screen: Screen) =>
+  call<void>("perform", { gesture, screen });

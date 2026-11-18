@@ -29,6 +29,12 @@ APP="$MOUNT/$PRODUCT_NAME.app"
 [[ -x "$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info" CFBundleExecutable)" ]] \
   || fail "the app's executable is missing or not executable."
 
+# macOS kills an app with no usage description the moment it touches
+# Bluetooth, with no prompt and no error. Catch a lost Info.plist merge here.
+defaults read "$APP/Contents/Info" NSBluetoothAlwaysUsageDescription >/dev/null 2>&1 \
+  || fail "the app's Info.plist has no NSBluetoothAlwaysUsageDescription." \
+  "src-tauri/Info.plist was not merged; the app would crash on first Bluetooth use."
+
 codesign --verify --deep --strict "$APP" 2>/dev/null \
   || fail "the app's signature does not verify." \
   "macOS reports an app with a broken signature as \"damaged\" once downloaded." \
@@ -37,5 +43,6 @@ codesign --verify --deep --strict "$APP" 2>/dev/null \
 SIGNATURE="$(codesign -dv "$APP" 2>&1 | grep -E '^(Signature|Authority)=' | head -1 || true)"
 echo "  image checksum   ok"
 echo "  contents         $PRODUCT_NAME.app, Applications link"
+echo "  bluetooth text   ok"
 echo "  signature        ok (${SIGNATURE:-unknown})"
 echo "  architectures    $(lipo -archs "$APP/Contents/MacOS/"* 2>/dev/null | head -1)"
