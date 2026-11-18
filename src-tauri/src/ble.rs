@@ -11,7 +11,8 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+use std::time::Instant;
 
 use edart_core::gatt::{self, CharSpec, ServiceSpec, Value};
 use edart_core::status::BluetoothStatus;
@@ -42,6 +43,25 @@ fn update_status(f: impl FnOnce(&mut BluetoothStatus)) {
     f(status);
 }
 
+static STARTED: OnceLock<Instant> = OnceLock::new();
+
+/// Add a line to the Details log, stamped with seconds since start.
+fn log(message: impl AsRef<str>) {
+    let t = STARTED.get_or_init(Instant::now).elapsed().as_secs_f32();
+    let line = format!("{t:7.1}s  {}", message.as_ref());
+    update_status(|s| s.log(line));
+}
+
+/// The first 8 characters of a central's identifier, enough to tell phones apart.
+fn who(central: &CBCentral) -> String {
+    let id = unsafe { central.identifier().UUIDString() }.to_string();
+    id.chars().take(8).collect()
+}
+
+fn uuid_of(ch: &CBCharacteristic) -> String {
+    unsafe { ch.UUID().UUIDString() }.to_string()
+}
+
 /// A snapshot of the link, safe to call from any thread.
 pub fn status() -> BluetoothStatus {
     let guard = STATUS.lock().unwrap_or_else(|e| e.into_inner());
@@ -58,6 +78,7 @@ enum Role {
     Input(u8),
     Output,
     ControlPoint,
+    ServiceChanged,
     Dynamic(Vec<u8>),
     Other,
 }
@@ -72,6 +93,11 @@ struct Peripheral {
     inputs: HashMap<u8, Retained<CBMutableCharacteristic>>,
     subscribers: HashMap<u8, HashSet<String>>,
     pending: VecDeque<(u8, Vec<u8>)>,
+    service_changed: Option<Retained<CBMutableCharacteristic>>,
+    /// Phones subscribed to Service Changed.
+    sc_subscribers: HashSet<String>,
+    /// Phones already sent a Service Changed this session.
+    sc_sent: HashSet<String>,
 }
 
 thread_local! {
@@ -106,6 +132,10 @@ define_class!(
         fn did_start_advertising(&self, manager: &CBPeripheralManager, error: Option<&NSError>) {
             let advertising = unsafe { manager.isAdvertising() };
             let message = error.map(|e| e.localizedDescription().to_string());
+            match &message {
+                None => log("advertising"),
+                Some(m) => log(format!("advertising failed: {m}")),
+            }
             update_status(|s| {
                 s.advertising = advertising || message.is_none();
                 if message.is_some() {
@@ -145,7 +175,7 @@ define_class!(
             manager: &CBPeripheralManager,
             requests: &NSArray<CBATTRequest>,
         ) {
-            update_status(|s| s.phone_seen = true);
+            on_writes(requests);
             // Nothing to store: LED state and control-point writes carry no
             // input. Answer once for the whole batch, as CoreBluetooth wants.
             if let Some(first) = requests.firstObject() {
@@ -207,13 +237,33 @@ pub fn start(mtm: MainThreadMarker) {
             inputs: HashMap::new(),
             subscribers: HashMap::new(),
             pending: VecDeque::new(),
+            service_changed: None,
+            sc_subscribers: HashSet::new(),
+            sc_sent: HashSet::new(),
         });
     });
+    log("started");
+}
+
+/// Throw the GATT database away and publish it again. Phones that cached
+/// the old one are told to rediscover.
+pub fn restart() {
+    let on = PERIPHERAL.with(|cell| {
+        cell.borrow()
+            .as_ref()
+            .map(|p| unsafe { p.manager.state() } == CBManagerState::PoweredOn)
+            .unwrap_or(false)
+    });
+    if on {
+        log("restarting Bluetooth services");
+        rebuild();
+    }
 }
 
 fn on_state(manager: &CBPeripheralManager) {
     let state = unsafe { manager.state() };
     update_status(|s| s.state = state_name(state).into());
+    log(format!("Bluetooth {}", state_name(state)));
     if state != CBManagerState::PoweredOn {
         update_status(|s| {
             s.advertising = false;
@@ -221,7 +271,11 @@ fn on_state(manager: &CBPeripheralManager) {
         });
         return;
     }
-    // After power-on or a reset the old database is gone: rebuild it.
+    rebuild();
+}
+
+/// After power-on or a reset the old database is gone: build it again.
+fn rebuild() {
     PERIPHERAL.with(|cell| {
         if let Some(p) = cell.borrow_mut().as_mut() {
             unsafe {
@@ -233,6 +287,9 @@ fn on_state(manager: &CBPeripheralManager) {
             p.inputs.clear();
             p.subscribers.clear();
             p.pending.clear();
+            p.service_changed = None;
+            p.sc_subscribers.clear();
+            p.sc_sent.clear();
             p.to_add = gatt::services().into();
         }
     });
@@ -279,11 +336,15 @@ fn build_service(p: &mut Peripheral, spec: &ServiceSpec) -> Retained<CBMutableSe
             (Some((id, gatt::REPORT_TYPE_INPUT)), _) => Role::Input(id),
             (Some(_), _) => Role::Output,
             (None, _) if c.uuid == gatt::CHAR_CONTROL_POINT => Role::ControlPoint,
+            (None, _) if c.uuid == gatt::CHAR_SERVICE_CHANGED => Role::ServiceChanged,
             (None, Value::Dynamic(v)) => Role::Dynamic(v.clone()),
             _ => Role::Other,
         };
         if let Role::Input(id) = role {
             p.inputs.insert(id, ch.clone());
+        }
+        if let Role::ServiceChanged = role {
+            p.service_changed = Some(ch.clone());
         }
         p.roles.push((ch.clone(), role));
         chars.push(Retained::into_super(ch));
@@ -330,6 +391,14 @@ fn build_characteristic(c: &CharSpec) -> Retained<CBMutableCharacteristic> {
 }
 
 fn on_service_added(service: &CBService, error: Option<&NSError>) {
+    let id = unsafe { service.UUID().UUIDString() }.to_string();
+    match error {
+        None => log(format!("service added {id}")),
+        Some(e) => log(format!(
+            "service REFUSED {id}: {}",
+            e.localizedDescription()
+        )),
+    }
     if let Some(error) = error {
         // Keep going: an optional service being refused must not stop
         // advertising. A refused HID service shows up in the status.
@@ -385,6 +454,14 @@ fn role_of(p: &Peripheral, ch: &CBCharacteristic) -> Role {
 
 fn on_read(manager: &CBPeripheralManager, request: &CBATTRequest) {
     update_status(|s| s.phone_seen = true);
+    let ch = unsafe { request.characteristic() };
+    let central = unsafe { request.central() };
+    log(format!(
+        "read {} offset {} by {}",
+        uuid_of(&ch),
+        unsafe { request.offset() },
+        who(&central)
+    ));
     let value = PERIPHERAL.with(|cell| {
         let borrow = cell.borrow();
         let p = borrow.as_ref()?;
@@ -393,7 +470,7 @@ fn on_read(manager: &CBPeripheralManager, request: &CBATTRequest) {
             Role::Input(id) => Some(vec![0; edart_core::hid::report_len(id)]),
             Role::Output => Some(vec![0]),
             Role::Dynamic(v) => Some(v),
-            Role::ControlPoint => None,
+            Role::ControlPoint | Role::ServiceChanged => None,
             Role::Other => unsafe { ch.value() }.map(|d| d.to_vec()),
         }
     });
@@ -413,13 +490,33 @@ fn on_read(manager: &CBPeripheralManager, request: &CBATTRequest) {
 }
 
 fn on_subscription(central: &CBCentral, ch: &CBCharacteristic, subscribed: bool) {
+    update_status(|s| s.phone_seen = true);
+    log(format!(
+        "{} {} by {}",
+        if subscribed {
+            "subscribe"
+        } else {
+            "unsubscribe"
+        },
+        uuid_of(ch),
+        who(central)
+    ));
     let any = PERIPHERAL.with(|cell| {
         let mut borrow = cell.borrow_mut();
         let p = borrow.as_mut()?;
-        let Role::Input(id) = role_of(p, ch) else {
-            return None;
-        };
         let who = unsafe { central.identifier().UUIDString() }.to_string();
+        let id = match role_of(p, ch) {
+            Role::Input(id) => id,
+            Role::ServiceChanged => {
+                if subscribed {
+                    p.sc_subscribers.insert(who);
+                } else {
+                    p.sc_subscribers.remove(&who);
+                }
+                return None;
+            }
+            _ => return None,
+        };
         let set = p.subscribers.entry(id).or_default();
         if subscribed {
             set.insert(who);
@@ -436,6 +533,63 @@ fn on_subscription(central: &CBCentral, ch: &CBCharacteristic, subscribed: bool)
             }
             s.subscribed = any;
         });
+    }
+}
+
+fn on_writes(requests: &NSArray<CBATTRequest>) {
+    update_status(|s| s.phone_seen = true);
+    for request in requests.iter() {
+        let ch = unsafe { request.characteristic() };
+        let central = unsafe { request.central() };
+        let len = unsafe { request.value() }.map(|d| d.len()).unwrap_or(0);
+        log(format!(
+            "write {} ({len} bytes) by {}",
+            uuid_of(&ch),
+            who(&central)
+        ));
+        let is_control = PERIPHERAL.with(|cell| {
+            cell.borrow()
+                .as_ref()
+                .map(|p| matches!(role_of(p, &ch), Role::ControlPoint))
+                .unwrap_or(false)
+        });
+        if is_control {
+            recover_stale_cache(&central);
+        }
+    }
+}
+
+/// A bonded phone that trusts a stale copy of the Mac's services writes the
+/// Control Point but never subscribes to input. Service Changed makes it
+/// rediscover. Sent once per phone per session.
+fn recover_stale_cache(central: &CBCentral) {
+    let sent = PERIPHERAL.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        let p = borrow.as_mut()?;
+        let id = unsafe { central.identifier().UUIDString() }.to_string();
+        let has_input = p.subscribers.values().any(|s| s.contains(&id));
+        if has_input || p.sc_sent.contains(&id) {
+            return None;
+        }
+        let ch = p.service_changed.clone()?;
+        p.sc_sent.insert(id.clone());
+        let subscribed = p.sc_subscribers.contains(&id);
+        let centrals = NSArray::from_slice(&[central]);
+        let ok = unsafe {
+            p.manager
+                .updateValue_forCharacteristic_onSubscribedCentrals(
+                    &NSData::with_bytes(&gatt::SERVICE_CHANGED_ALL),
+                    &ch,
+                    Some(&centrals),
+                )
+        };
+        Some((ok, subscribed))
+    });
+    if let Some((ok, subscribed)) = sent {
+        log(format!(
+            "stale cache on {}: sent Service Changed (queued {ok}, phone subscribed {subscribed})",
+            who(central)
+        ));
     }
 }
 

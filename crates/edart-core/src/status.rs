@@ -26,6 +26,22 @@ pub struct BluetoothStatus {
     pub failed_services: Vec<String>,
     /// The last error worth showing, if any.
     pub error: Option<String>,
+    /// Recent Bluetooth events, oldest first, for the Details panel.
+    pub events: Vec<String>,
+}
+
+/// Most events kept in [`BluetoothStatus::events`].
+pub const MAX_EVENTS: usize = 60;
+
+impl BluetoothStatus {
+    /// Record an event, dropping the oldest past [`MAX_EVENTS`].
+    pub fn log(&mut self, event: impl Into<String>) {
+        self.events.push(event.into());
+        if self.events.len() > MAX_EVENTS {
+            let extra = self.events.len() - MAX_EVENTS;
+            self.events.drain(..extra);
+        }
+    }
 }
 
 /// The coarse step the user is on, for the UI's headline.
@@ -125,6 +141,17 @@ mod tests {
         assert_eq!(json["phase"], "waitingForPhone");
         assert_eq!(json["failedServices"], serde_json::json!([]));
         assert_eq!(json["state"], "poweredOn");
+    }
+
+    #[test]
+    fn the_event_log_keeps_the_newest() {
+        let mut s = BluetoothStatus::default();
+        for i in 0..(MAX_EVENTS + 5) {
+            s.log(format!("e{i}"));
+        }
+        assert_eq!(s.events.len(), MAX_EVENTS);
+        assert_eq!(s.events[0], "e5");
+        assert_eq!(s.events.last().unwrap(), &format!("e{}", MAX_EVENTS + 4));
     }
 
     #[test]

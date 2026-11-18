@@ -9,8 +9,8 @@ describe("native bridge", () => {
 
   it("refuses with a useful message instead of hanging", async () => {
     await expect(bluetoothStatus()).rejects.toThrow(/npm run dev/);
-    await expect(perform({ type: "press_home" }, { width: 1, height: 1 })).rejects.toThrow(
-      /npm run dev/,
-    );
+    await expect(
+      perform({ type: "press_home" }, { width: 1, height: 1 }),
+    ).rejects.toThrow(/npm run dev/);
   });
 });

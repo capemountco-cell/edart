@@ -10,9 +10,14 @@ export function nativeAvailable(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
-async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+async function call<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
   if (!nativeAvailable()) {
-    throw new Error("The native side is not running. Start the app with `npm run dev`.");
+    throw new Error(
+      "The native side is not running. Start the app with `npm run dev`.",
+    );
   }
   return invoke<T>(command, args);
 }
@@ -41,6 +46,8 @@ export interface BluetoothStatus {
   macName: string | null;
   failedServices: string[];
   error: string | null;
+  /** Recent Bluetooth events, oldest first. */
+  events: string[];
 }
 
 /** Mirrors `edart_core::gesture::Screen`. */
@@ -54,11 +61,19 @@ export type Gesture =
   | { type: "tap"; x: number; y: number }
   | { type: "double_tap"; x: number; y: number }
   | { type: "long_press"; x: number; y: number; ms?: number }
-  | { type: "swipe"; from_x: number; from_y: number; to_x: number; to_y: number; ms?: number }
+  | {
+      type: "swipe";
+      from_x: number;
+      from_y: number;
+      to_x: number;
+      to_y: number;
+      ms?: number;
+    }
   | { type: "type_text"; text: string }
   | { type: "press_home" };
 
 export const bluetoothStatus = () => call<BluetoothStatus>("bt_status");
 export const startBluetooth = () => call<void>("bt_start");
+export const restartBluetooth = () => call<void>("bt_restart");
 export const perform = (gesture: Gesture, screen: Screen) =>
   call<void>("perform", { gesture, screen });
