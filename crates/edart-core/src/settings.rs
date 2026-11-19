@@ -1,5 +1,5 @@
-//! The app's settings file: the AI token and, for testing, another API
-//! address.
+//! The app's settings file: the AI token, the trading limits and, for
+//! testing, another API address.
 //!
 //! The token is a secret, so the file is written readable by the user
 //! only, and the UI is never handed the token back: it learns whether one
@@ -9,6 +9,8 @@ use std::io;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+
+use crate::trading::TradingLimits;
 
 /// Where the agent asks for its next step unless the settings say otherwise.
 pub const DEFAULT_API_BASE: &str = "https://edart-api.lovable.app";
@@ -21,6 +23,14 @@ pub struct Settings {
     /// Overrides [`DEFAULT_API_BASE`]. No trailing slash.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_base: Option<String>,
+    /// Trading mode and its limits. Off, and left out of the file, until
+    /// the user turns it on or changes it.
+    #[serde(default, skip_serializing_if = "is_default_trading")]
+    pub trading: TradingLimits,
+}
+
+fn is_default_trading(trading: &TradingLimits) -> bool {
+    *trading == TradingLimits::default()
 }
 
 /// What the UI may see.
@@ -142,13 +152,18 @@ pub fn load(path: &Path) -> Result<Settings, String> {
     }
 }
 
-/// Write the settings, readable and writable by the user only. Written to
-/// a temporary file first, so a crash cannot leave half a file.
+/// Write the settings, readable and writable by the user only.
 pub fn save(path: &Path, settings: &Settings) -> io::Result<()> {
+    let text = serde_json::to_string_pretty(settings).map_err(io::Error::other)?;
+    write_private(path, &text)
+}
+
+/// Write a file readable and writable by the user only. Written to a
+/// temporary file first, so a crash cannot leave half a file.
+pub fn write_private(path: &Path, text: &str) -> io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }
-    let text = serde_json::to_string_pretty(settings).map_err(io::Error::other)?;
     let tmp = path.with_extension("json.tmp");
     {
         use std::io::Write;
@@ -283,6 +298,11 @@ mod tests {
         let settings = Settings {
             token: Some("abc".into()),
             api_base: Some("http://localhost:1".into()),
+            trading: TradingLimits {
+                enabled: true,
+                max_trades_per_day: 4,
+                ..TradingLimits::default()
+            },
         };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path).unwrap(), settings);

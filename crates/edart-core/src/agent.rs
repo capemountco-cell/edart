@@ -95,6 +95,8 @@ pub enum Effect {
 /// Bounds for durations the model picks, so a wild number cannot hold a
 /// finger down for a minute or stall the loop.
 const WAIT_MS: (f64, f64) = (100.0, 5000.0);
+/// The longest wait in one step, unless the run's limits allow more.
+pub const MAX_WAIT_MS: u64 = WAIT_MS.1 as u64;
 const LONG_PRESS_MS: (f64, f64) = (300.0, 5000.0);
 const SWIPE_MS: (f64, f64) = (100.0, 3000.0);
 const DEFAULT_WAIT_MS: f64 = 1000.0;
@@ -117,6 +119,18 @@ fn on_screen(x: f64, y: f64, screen: Screen) -> Result<(f64, f64), String> {
 impl Action {
     /// Turn the action into something to do.
     pub fn effect(&self, screen: Screen) -> Result<Effect, String> {
+        self.effect_within(screen, MAX_WAIT_MS)
+    }
+
+    /// How long a wait action waits when the longest allowed is
+    /// `max_wait_ms`.
+    fn wait_ms(ms: Option<f64>, max_wait_ms: u64) -> u64 {
+        let range = (WAIT_MS.0, (max_wait_ms as f64).max(WAIT_MS.0));
+        duration(Some(ms.unwrap_or(DEFAULT_WAIT_MS)), range).unwrap_or(DEFAULT_WAIT_MS as u64)
+    }
+
+    /// [`Action::effect`], with a run's own limit on waiting.
+    pub fn effect_within(&self, screen: Screen, max_wait_ms: u64) -> Result<Effect, String> {
         Ok(match self {
             Action::Tap { x, y } => {
                 let (x, y) = on_screen(*x, *y, screen)?;
@@ -158,10 +172,7 @@ impl Action {
                 Effect::Perform(Gesture::TypeText { text: text.clone() })
             }
             Action::PressHome => Effect::Perform(Gesture::PressHome),
-            Action::Wait { ms } => Effect::WaitMs(
-                duration(Some(ms.unwrap_or(DEFAULT_WAIT_MS)), WAIT_MS)
-                    .unwrap_or(DEFAULT_WAIT_MS as u64),
-            ),
+            Action::Wait { ms } => Effect::WaitMs(Self::wait_ms(*ms, max_wait_ms)),
             Action::Done { success, summary } => Effect::Finish {
                 success: *success,
                 summary: summary.clone(),
@@ -171,6 +182,11 @@ impl Action {
 
     /// One short line for the chat and for the history.
     pub fn describe(&self) -> String {
+        self.describe_within(MAX_WAIT_MS)
+    }
+
+    /// [`Action::describe`], with a run's own limit on waiting.
+    pub fn describe_within(&self, max_wait_ms: u64) -> String {
         let at = |x: &f64, y: &f64| format!("({}, {})", x.round(), y.round());
         match self {
             Action::Tap { x, y } => format!("Tap {}", at(x, y)),
@@ -187,9 +203,7 @@ impl Action {
             Action::PressHome => "Go Home".into(),
             Action::Wait { ms } => format!(
                 "Wait {:.1}s",
-                duration(Some(ms.unwrap_or(DEFAULT_WAIT_MS)), WAIT_MS)
-                    .unwrap_or(DEFAULT_WAIT_MS as u64) as f64
-                    / 1000.0
+                Self::wait_ms(*ms, max_wait_ms) as f64 / 1000.0
             ),
             Action::Done { .. } => "Finish".into(),
         }
@@ -357,6 +371,8 @@ pub struct Limits {
     pub max_errors_in_a_row: u32,
     /// Most history messages sent with a request (the API allows 200).
     pub max_history: usize,
+    /// The longest one wait action may take.
+    pub max_wait_ms: u64,
 }
 
 impl Default for Limits {
@@ -365,6 +381,19 @@ impl Default for Limits {
             max_steps: 25,
             max_errors_in_a_row: 3,
             max_history: 40,
+            max_wait_ms: MAX_WAIT_MS,
+        }
+    }
+}
+
+impl Limits {
+    /// The limits of a run in trading mode: long enough to watch a
+    /// fifteen-minute market, with waits of up to half a minute.
+    pub fn for_trading(max_steps: u32) -> Limits {
+        Limits {
+            max_steps,
+            max_wait_ms: crate::trading::TRADING_WAIT_MS,
+            ..Limits::default()
         }
     }
 }
@@ -481,7 +510,7 @@ impl Run {
     pub fn answered(&mut self, response: &StepResponse, screen: Screen) -> Result<Effect, String> {
         self.steps += 1;
         let thought = response.thought.trim();
-        let action = response.action.describe();
+        let action = response.action.describe_within(self.limits.max_wait_ms);
         self.push(
             Role::Assistant,
             if thought.is_empty() {
@@ -490,7 +519,20 @@ impl Run {
                 format!("{thought}\nAction: {action}")
             },
         );
-        response.action.effect(screen)
+        response
+            .action
+            .effect_within(screen, self.limits.max_wait_ms)
+    }
+
+    /// The longest one wait may take in this run.
+    pub fn max_wait_ms(&self) -> u64 {
+        self.limits.max_wait_ms
+    }
+
+    /// The trading rails refused an action. That ends the run: the agent
+    /// is not given a second try at something it was told not to do.
+    pub fn refused(&self, reason: &str) -> Outcome {
+        Outcome::Failed(format!("Stopped by the trading rails: {reason}."))
     }
 
     /// The action was carried out, or could not be. Tells the model, and
@@ -970,6 +1012,46 @@ mod tests {
             });
         }
         assert_eq!(status.entries.len(), MAX_ENTRIES);
+    }
+
+    #[test]
+    fn a_trading_run_is_longer_and_may_wait_half_a_minute() {
+        let limits = Limits::for_trading(120);
+        assert_eq!(limits.max_steps, 120);
+        assert_eq!(limits.max_errors_in_a_row, 3);
+        let mut run = Run::new("trade", limits).unwrap();
+        let wait = |ms: f64| StepResponse {
+            action: Action::Wait { ms: Some(ms) },
+            thought: String::new(),
+        };
+        assert_eq!(
+            run.answered(&wait(20_000.0), SCREEN),
+            Ok(Effect::WaitMs(20_000))
+        );
+        assert_eq!(
+            run.answered(&wait(600_000.0), SCREEN),
+            Ok(Effect::WaitMs(30_000))
+        );
+        assert_eq!(run.history()[0].content, "Wait 20.0s");
+        assert_eq!(run.history()[1].content, "Wait 30.0s");
+        // An ordinary run still stops a wait at five seconds.
+        let mut run = Run::new("go", Limits::default()).unwrap();
+        assert_eq!(
+            run.answered(&wait(20_000.0), SCREEN),
+            Ok(Effect::WaitMs(5000))
+        );
+        assert_eq!(run.history()[0].content, "Wait 5.0s");
+    }
+
+    #[test]
+    fn a_refusal_by_the_rails_ends_the_run_with_its_reason() {
+        let run = Run::new("trade", Limits::for_trading(120)).unwrap();
+        let outcome = run.refused("Left Kalshi: this screen isn’t Kalshi");
+        assert!(!outcome.success());
+        assert_eq!(
+            outcome.summary(),
+            "Stopped by the trading rails: Left Kalshi: this screen isn’t Kalshi."
+        );
     }
 
     #[test]
