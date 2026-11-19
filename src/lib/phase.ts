@@ -49,9 +49,9 @@ export function phaseCopy(
       };
     case "pairing":
       return {
-        title: "Almost there",
+        title: "Almost there: pairing didn’t finish",
         detail:
-          "Your iPhone found Edart. Tap Pair if it asks. Still spinning? Tap ⓘ › Forget This Device, then pick the Mac again.",
+          "Your iPhone found Edart, but the secure pairing didn’t complete. This usually means old pairing leftovers. Forget the device on both sides: on this Mac in System Settings › Bluetooth (leave that window open), and on the iPhone in AssistiveTouch › Devices › Bluetooth Devices › ⓘ › Forget This Device. Turn the iPhone’s Bluetooth off and on, press Restart Bluetooth here, then tap the Mac’s name on the iPhone and accept Pair on both.",
       };
     case "connected":
       return {
