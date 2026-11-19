@@ -31,9 +31,12 @@ use objc2_vision::{
 use crate::mirror;
 
 /// A frame older than this is not trusted to be what the phone shows
-/// now. The phone sends frames many times a second, even of a still
-/// screen.
-const MAX_AGE: Duration = Duration::from_secs(3);
+/// now. Kept just above the mirror's own stall restart (8 s): a phone may
+/// send frames only when its screen changes, and a still screen's last
+/// frame is still what it shows. A frozen stream is caught by the mirror
+/// restarting, after which this rejects the old frame. Not yet measured
+/// on a real iPhone; if a still Kalshi screen blocks gestures, look here.
+const MAX_AGE: Duration = Duration::from_secs(10);
 /// Vision is handed a JPEG; this keeps small text sharp.
 const QUALITY: u8 = 92;
 
