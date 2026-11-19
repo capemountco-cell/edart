@@ -12,6 +12,9 @@ mod ble;
 #[cfg(target_os = "macos")]
 mod ble_central;
 
+// MCP connector: the local server AI tools use to reach the iPhone.
+mod mcp;
+
 #[cfg(target_os = "macos")]
 mod mirror;
 #[cfg(not(target_os = "macos"))]
@@ -320,6 +323,29 @@ fn serve_frame(path: &str) -> tauri::http::Response<Vec<u8>> {
         .unwrap_or_default()
 }
 
+/// MCP screenshots come from the live screen mirror; tool coordinates are
+/// in the pixels of the JPEG it returns.
+struct MirrorScreenshots;
+
+impl mcp::ScreenshotProvider for MirrorScreenshots {
+    fn available(&self) -> bool {
+        mirror::status().screen().is_some()
+    }
+
+    fn capture(&self) -> Result<mcp::Frame, String> {
+        let (jpeg, screen) = mirror::screenshot().ok_or_else(|| {
+            "The iPhone's screen isn't showing in Edart yet: connect it with a USB cable, \
+             unlock it and allow Camera access in Edart's Permissions screen."
+                .to_string()
+        })?;
+        Ok(mcp::Frame {
+            jpeg,
+            width: screen.width.round() as u32,
+            height: screen.height.round() as u32,
+        })
+    }
+}
+
 /// Build and run the application.
 pub fn run() {
     tauri::Builder::default()
@@ -329,7 +355,10 @@ pub fn run() {
             // thread the webview calls on.
             std::thread::spawn(move || responder.respond(serve_frame(&path)));
         })
-        .setup(|_app| {
+        .setup(|app| {
+            // MCP connector, with screenshots from the screen mirror.
+            mcp::set_screenshot_provider(MirrorScreenshots);
+            mcp::start(app.handle());
             // Watching the cable asks nothing of the user, so it starts
             // with the app.
             usb::start();
@@ -367,7 +396,10 @@ pub fn run() {
             agent_status,
             agent_start,
             agent_stop,
-            agent_clear
+            agent_clear,
+            // MCP connector.
+            mcp::mcp_status,
+            mcp::mcp_set_enabled
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");

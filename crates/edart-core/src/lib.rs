@@ -11,6 +11,7 @@ pub mod gesture;
 pub mod hid;
 pub mod image;
 pub mod jpeg;
+pub mod mcp;
 pub mod mirror;
 pub mod settings;
 pub mod status;

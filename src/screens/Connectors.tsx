@@ -1,7 +1,32 @@
-const TOOLS = ["screenshot", "tap", "swipe", "type", "home"];
+import { useEffect, useState } from "react";
 
-/** Where other AI tools will plug in. Not built yet, and says so. */
+import { Connectors as ConnectorCard } from "../components/Connectors";
+import { isDemo } from "../lib/demo";
+import { DEMO_MCP_STATUS, mcpStatus, type McpStatus } from "../lib/mcp";
+import { nativeAvailable } from "../lib/native";
+
+/** Use the iPhone from other AI tools, through Edart's local MCP server. */
 export function Connectors() {
+  const demo = isDemo();
+  const [status, setStatus] = useState<McpStatus | null>(
+    demo ? DEMO_MCP_STATUS : null,
+  );
+
+  useEffect(() => {
+    if (demo || !nativeAvailable()) return;
+    let live = true;
+    const refresh = () =>
+      mcpStatus()
+        .then((s) => live && setStatus(s))
+        .catch(() => {});
+    void refresh();
+    const timer = window.setInterval(refresh, 2000);
+    return () => {
+      live = false;
+      window.clearInterval(timer);
+    };
+  }, [demo]);
+
   return (
     <div className="page">
       <header className="page-head">
@@ -13,26 +38,7 @@ export function Connectors() {
           Use your iPhone from the AI tools you already have.
         </p>
       </header>
-
-      <section className="card feature" aria-labelledby="mcp-title">
-        <span className="pill pill-idle">Coming soon</span>
-        <div>
-          <h2 id="mcp-title">MCP server</h2>
-          <p>
-            Edart will offer your iPhone to any MCP client, such as a coding
-            agent or a desktop assistant, through a server that only answers on
-            this Mac. Until then, the agent on the Control screen is the way to
-            hand your iPhone a task.
-          </p>
-        </div>
-        <div className="tags" aria-label="Planned tools">
-          {TOOLS.map((tool) => (
-            <span key={tool} className="tag">
-              {tool}
-            </span>
-          ))}
-        </div>
-      </section>
+      <ConnectorCard status={status} onChange={setStatus} />
     </div>
   );
 }
