@@ -58,6 +58,12 @@ export function phaseCopy(
         title: "iPhone connected",
         detail: "Edart can tap, swipe and type on your iPhone.",
       };
+    case "paused":
+      return {
+        title: "Paused",
+        detail:
+          "Edart has let go of your iPhone: no pointer, no taps. The pairing is kept. Press Resume to take control again.",
+      };
   }
 }
 

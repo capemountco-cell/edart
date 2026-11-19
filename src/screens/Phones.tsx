@@ -3,7 +3,7 @@ import { Details } from "../components/Details";
 import { linkLabel, mirrorCopy, phaseCopy, usbPhaseCopy } from "../lib/phase";
 import type { Edart } from "../lib/useEdart";
 import type { Route } from "../App";
-import { StatusPill } from "./Control";
+import { PauseButton, StatusPill } from "./Control";
 
 /** The iPhone Edart can see and control, and how it is linked. */
 export function Phones({
@@ -69,6 +69,16 @@ export function Phones({
             <PlusIcon />
             Connect an iPhone
           </button>
+        )}
+        {(app.bluetooth?.paused || app.bluetoothConnected) && (
+          <div className="button-row">
+            <PauseButton app={app} />
+            <span className="fine">
+              {app.bluetooth?.paused
+                ? "Paused: your iPhone is free and still paired."
+                : "Pause lets go of your iPhone for a while without unpairing."}
+            </span>
+          </div>
         )}
       </section>
 

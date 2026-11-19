@@ -245,6 +245,44 @@ pub fn start(mtm: MainThreadMarker) {
     log("started");
 }
 
+/// Pause: take the keyboard-and-mouse services down so the iPhone is free
+/// (its pointer goes away), but keep the pairing. Main thread only.
+pub fn pause() {
+    PERIPHERAL.with(|cell| {
+        if let Some(p) = cell.borrow_mut().as_mut() {
+            unsafe {
+                p.manager.stopAdvertising();
+                p.manager.removeAllServices();
+            }
+            p.to_add.clear();
+            p.services.clear();
+            p.roles.clear();
+            p.inputs.clear();
+            p.subscribers.clear();
+            p.pending.clear();
+            p.service_changed = None;
+            p.sc_subscribers.clear();
+            p.sc_sent.clear();
+        }
+    });
+    update_status(|s| {
+        s.paused = true;
+        s.published = false;
+        s.advertising = false;
+        s.subscribed = false;
+        s.phone_seen = false;
+    });
+    log("paused: services taken down, the iPhone is free (pairing kept)");
+}
+
+/// Undo [`pause`]: publish the services again; the paired iPhone
+/// reconnects by itself. Main thread only.
+pub fn resume() {
+    update_status(|s| s.paused = false);
+    log("resuming");
+    restart();
+}
+
 /// Throw the GATT database away and publish it again. Phones that cached
 /// the old one are told to rediscover.
 pub fn restart() {
@@ -264,6 +302,10 @@ fn on_state(manager: &CBPeripheralManager) {
     let state = unsafe { manager.state() };
     update_status(|s| s.state = state_name(state).into());
     log(format!("Bluetooth {}", state_name(state)));
+    // Paused: stay down until Resume, even if Bluetooth comes back on.
+    if status().paused {
+        return;
+    }
     if state != CBManagerState::PoweredOn {
         update_status(|s| {
             s.advertising = false;
