@@ -9,32 +9,12 @@ import {
   restartBluetooth,
   startBluetooth,
   startMirror,
-  usbEnableDeveloperMode,
-  usbPrepare,
   type Gesture,
-  type UsbPhase,
 } from "../lib/native";
-import {
-  mirrorCopy,
-  phaseCopy,
-  usbPhaseCopy,
-  usbStepStates,
-  type StepState,
-} from "../lib/phase";
+import { mirrorCopy, phaseCopy, type StepState } from "../lib/phase";
 import { edgeSwipe } from "../lib/pointer";
 import { errorText, type Edart } from "../lib/useEdart";
 import type { Route } from "../App";
-
-/** Phases in which the phone is on the cable, trusted and unlocked. */
-const CAN_CONNECT: UsbPhase[] = [
-  "developerModeOff",
-  "developerModeManual",
-  "confirmDeveloperMode",
-  "xcodeMissing",
-  "notPrepared",
-  "diskImageMissing",
-  "serviceUnavailable",
-];
 
 /**
  * Getting an iPhone connected: the screen over the cable, touch over
@@ -67,12 +47,9 @@ export function Setup({ app, go }: { app: Edart; go: (route: Route) => void }) {
 
   const mirrorPhase = app.mirror?.phase ?? "off";
   const btPhase = app.bluetooth?.phase ?? "unsupported";
-  const usbPhase: UsbPhase = app.usb?.phase ?? "unsupported";
   const mac = app.bluetooth?.macName ?? "your Mac’s name";
   const screenCopy = mirrorCopy(mirrorPhase);
   const btCopy = phaseCopy(btPhase, mac);
-  const usbCopy = usbPhaseCopy(usbPhase, app.phoneName);
-  const usbSteps = usbStepStates(usbPhase);
 
   const screenDone = mirrorPhase === "live" || mirrorPhase === "dark";
   const btOn = ["waitingForPhone", "pairing", "connected"].includes(btPhase);
@@ -91,17 +68,6 @@ export function Setup({ app, go }: { app: Edart; go: (route: Route) => void }) {
   const showScreen = () => act("screen", () => startMirror());
   const turnOnBluetooth = () => act("bluetooth", () => startBluetooth());
   const openBluetooth = () => act("btSettings", () => openBluetoothSettings());
-  const developerMode = () =>
-    act("developerMode", async () =>
-      (await usbEnableDeveloperMode()) === "restarting"
-        ? "Your iPhone is restarting. Unlock it when it’s back."
-        : "Developer Mode now shows in the iPhone’s Settings › Privacy & Security. Switch it on there and tap Restart.",
-    );
-  const connectUsb = () =>
-    act("connect", async () => {
-      await usbPrepare();
-      return "Connected over USB.";
-    });
   const tryGesture = (label: string, gesture: Gesture) =>
     act(label, async () => {
       await app.send(gesture);
@@ -397,64 +363,6 @@ export function Setup({ app, go }: { app: Edart; go: (route: Route) => void }) {
             Connect from Mac
           </button>
         </div>
-      </details>
-
-      <details className="card details">
-        <summary>Control over the cable instead (experimental)</summary>
-        <p className="fine intro-note">
-          Edart can also tap and type through the USB cable, the way Apple’s
-          developer tools do. It needs Xcode and Developer Mode on the iPhone,
-          and has not been tested as much as Bluetooth.
-        </p>
-        <div className={`status inner usb-${usbPhase}`} aria-live="polite">
-          <span className="dot" aria-hidden="true" />
-          <div className="status-text">
-            <h3>{usbCopy.title}</h3>
-            <p>{usbCopy.detail}</p>
-            {app.usb?.error && <p className="fine error">{app.usb.error}</p>}
-          </div>
-          {(usbPhase === "developerModeOff" ||
-            usbPhase === "developerModeManual") && (
-            <button
-              type="button"
-              className="secondary small"
-              disabled={busy !== null}
-              onClick={() => void developerMode()}
-            >
-              {busy === "developerMode"
-                ? "Asking…"
-                : usbPhase === "developerModeOff"
-                  ? "Turn on Developer Mode"
-                  : "Show the switch again"}
-            </button>
-          )}
-          {CAN_CONNECT.includes(usbPhase) &&
-            usbPhase !== "developerModeOff" && (
-              <button
-                type="button"
-                className="secondary small"
-                disabled={busy !== null}
-                onClick={() => void connectUsb()}
-              >
-                {busy === "connect" ? "Connecting…" : "Connect"}
-              </button>
-            )}
-        </div>
-        <ol className="mini-steps">
-          {[
-            "Plug in your iPhone and tap Trust",
-            "Turn on Developer Mode",
-            "Restart, then confirm on the iPhone",
-            "Connect (needs Xcode installed and opened once)",
-          ].map((label, i) => (
-            <li key={label} className={usbSteps[i]}>
-              <span className="num">
-                {usbSteps[i] === "done" ? <CheckIcon size={16} /> : i + 1}
-              </span>
-              {label}
-            </li>
-          ))}
-        </ol>
       </details>
 
       <Details app={app} />

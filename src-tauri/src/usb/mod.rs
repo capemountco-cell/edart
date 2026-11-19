@@ -105,6 +105,9 @@ enum Command {
 static WORKER: OnceLock<Sender<Command>> = OnceLock::new();
 
 /// Start watching the cable. Safe to call more than once.
+// Not started: USB touch control needs Xcode, which the user can't install.
+// Kept so it can be switched back on later.
+#[allow(dead_code)]
 pub fn start() {
     worker();
 }

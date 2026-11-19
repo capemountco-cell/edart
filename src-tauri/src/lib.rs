@@ -381,9 +381,9 @@ pub fn run() {
             // MCP connector, with screenshots from the screen mirror.
             mcp::set_screenshot_provider(MirrorScreenshots);
             mcp::start(app.handle());
-            // Watching the cable asks nothing of the user, so it starts
-            // with the app.
-            usb::start();
+            // USB touch control needs Xcode, which this user can't install,
+            // so it is not started: the cable is used for the screen mirror
+            // only, and taps go over Bluetooth. The code stays for later.
             // Skip the prompt on first launch; the Setup screen asks with
             // context. Once allowed, start straight away.
             #[cfg(target_os = "macos")]

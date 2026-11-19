@@ -6,6 +6,7 @@ use edart_core::usb::readiness::{DeveloperModeOutcome, UsbFacts, UsbStatus};
 
 const NEEDS_MAC: &str = "USB control needs macOS.";
 
+#[allow(dead_code)]
 pub fn start() {}
 
 pub fn status() -> UsbStatus {
