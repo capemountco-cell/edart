@@ -8,6 +8,7 @@ pub mod agent;
 pub mod base64;
 pub mod gatt;
 pub mod gesture;
+pub mod ground;
 pub mod guard;
 pub mod hid;
 pub mod image;

@@ -23,6 +23,13 @@ pub struct Settings {
     /// Overrides [`DEFAULT_API_BASE`]. No trailing slash.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_base: Option<String>,
+    /// What the agent is told with every step, whatever the request.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    /// Let the agent type text of its own. Off: it types only what the
+    /// user wrote.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub allow_typing: bool,
     /// Trading mode and its limits. Off, and left out of the file, until
     /// the user turns it on or changes it.
     #[serde(default, skip_serializing_if = "is_default_trading")]
@@ -43,7 +50,13 @@ pub struct SettingsView {
     pub api_base_is_default: bool,
     /// Where the file is, to show the user.
     pub path: String,
+    /// The standing instructions; empty when there are none.
+    pub instructions: String,
+    pub allow_typing: bool,
 }
+
+/// Standing instructions can be this long.
+pub const MAX_INSTRUCTIONS_CHARS: usize = 8000;
 
 /// A change from the UI. A field left out is left alone; an empty string
 /// clears it.
@@ -54,6 +67,10 @@ pub struct SettingsChange {
     pub token: Option<String>,
     #[serde(default)]
     pub api_base: Option<String>,
+    #[serde(default)]
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub allow_typing: Option<bool>,
 }
 
 impl Settings {
@@ -75,6 +92,8 @@ impl Settings {
             api_base: self.api_base().to_string(),
             api_base_is_default: self.api_base.is_none(),
             path: path.display().to_string(),
+            instructions: self.instructions.clone().unwrap_or_default(),
+            allow_typing: self.allow_typing,
         }
     }
 
@@ -83,8 +102,26 @@ impl Settings {
     pub fn apply(&mut self, change: SettingsChange) -> Result<(), String> {
         let token = change.token.map(|t| clean_token(&t)).transpose()?;
         let api_base = change.api_base.map(|b| clean_api_base(&b)).transpose()?;
+        let instructions = match change.instructions {
+            None => None,
+            Some(text) => {
+                let text = text.trim();
+                if text.chars().count() > MAX_INSTRUCTIONS_CHARS {
+                    return Err(format!(
+                        "The standing instructions are too long. Keep them under {MAX_INSTRUCTIONS_CHARS} characters."
+                    ));
+                }
+                Some((!text.is_empty()).then(|| text.to_string()))
+            }
+        };
         if let Some(token) = token {
             self.token = token;
+        }
+        if let Some(instructions) = instructions {
+            self.instructions = instructions;
+        }
+        if let Some(allow) = change.allow_typing {
+            self.allow_typing = allow;
         }
         if let Some(api_base) = api_base {
             self.api_base = api_base;
@@ -195,7 +232,48 @@ mod tests {
         SettingsChange {
             token: token.map(str::to_string),
             api_base: api_base.map(str::to_string),
+            ..SettingsChange::default()
         }
+    }
+
+    #[test]
+    fn standing_instructions_and_typing_are_saved_and_shown() {
+        let mut settings = Settings::default();
+        let view = settings.view(Path::new("/x"));
+        assert_eq!(view.instructions, "");
+        assert!(!view.allow_typing);
+        settings
+            .apply(SettingsChange {
+                instructions: Some("  Always answer in English.  ".into()),
+                allow_typing: Some(true),
+                ..SettingsChange::default()
+            })
+            .unwrap();
+        assert_eq!(
+            settings.instructions.as_deref(),
+            Some("Always answer in English.")
+        );
+        assert!(settings.allow_typing);
+        let json = serde_json::to_string(&settings).unwrap();
+        assert_eq!(serde_json::from_str::<Settings>(&json).unwrap(), settings);
+        assert!(json.contains("allow_typing"));
+        // Too long is refused and changes nothing; empty clears.
+        let long = SettingsChange {
+            instructions: Some("x".repeat(MAX_INSTRUCTIONS_CHARS + 1)),
+            allow_typing: Some(false),
+            ..SettingsChange::default()
+        };
+        assert!(settings.apply(long).unwrap_err().contains("too long"));
+        assert!(settings.allow_typing);
+        settings
+            .apply(SettingsChange {
+                instructions: Some(" ".into()),
+                allow_typing: Some(false),
+                ..SettingsChange::default()
+            })
+            .unwrap();
+        assert_eq!(settings, Settings::default());
+        assert_eq!(serde_json::to_string(&settings).unwrap(), "{}");
     }
 
     fn temp_file(name: &str) -> std::path::PathBuf {
@@ -298,6 +376,8 @@ mod tests {
         let settings = Settings {
             token: Some("abc".into()),
             api_base: Some("http://localhost:1".into()),
+            instructions: Some("Be brief.".into()),
+            allow_typing: true,
             trading: TradingLimits {
                 enabled: true,
                 max_trades_per_day: 4,

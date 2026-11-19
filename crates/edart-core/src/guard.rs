@@ -7,7 +7,8 @@
 //! passes [`decide`] reaches the phone.
 //!
 //! The rules, in short:
-//! - on the Home Screen, only a tap on the Kalshi icon;
+//! - on the Home Screen, only a tap on the allowed app's icon (Kalshi
+//!   unless the user names another);
 //! - in any other app or on a screen that cannot be recognised, only
 //!   Home;
 //! - in Kalshi, anything except committing a buy, which needs the order
@@ -238,7 +239,8 @@ impl Reading {
     /// Whether the screen names the market trading is limited to.
     fn names_market(&self, market: &str) -> bool {
         let needle = squash(market);
-        !needle.is_empty() && self.squashed.iter().any(|line| line.contains(&needle))
+        // No market named: any market of the app.
+        needle.is_empty() || self.squashed.iter().any(|line| line.contains(&needle))
     }
 }
 
@@ -300,7 +302,7 @@ fn icon_area(label: &OcrLine, frame: &OcrFrame) -> Rect {
     let half = frame.width * 0.11;
     Rect {
         x0: center - half,
-        y0: label.y - frame.width * 0.2,
+        y0: label.y - frame.width * 0.18,
         x1: center + half,
         y1: label.y + label.height + frame.height * 0.005,
     }
@@ -333,8 +335,28 @@ fn label_rows(lines: &[(&OcrLine, String)], frame: &OcrFrame) -> usize {
     rows
 }
 
-/// Read a screen: what it is and where its risky controls are.
-pub fn read(frame: &OcrFrame) -> Reading {
+/// Whether a line names the app, as whole words: "Kalshi", "“Kalshi”
+/// Would Like…", but not "Kalshify".
+fn names_app(normed: &str, app: &str) -> bool {
+    let words = |text: &str| {
+        text.split(|c: char| !c.is_alphanumeric())
+            .filter(|w| !w.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let wanted = words(app);
+    !wanted.is_empty() && format!(" {} ", words(normed)).contains(&format!(" {wanted} "))
+}
+
+/// Read a screen: what it is and where its risky controls are. `app` is
+/// the one app that may be used.
+///
+/// Kalshi's screens are recognised by what is on them. Any other app is
+/// recognised only by its name being on the screen, so less of it can
+/// be used; a buy is checked the same way in either.
+pub fn read(frame: &OcrFrame, app: &str) -> Reading {
+    let app = norm(app);
+    let is_kalshi = squash(&app) == "kalshi";
     let lines: Vec<(&OcrLine, String)> = frame
         .lines
         .iter()
@@ -368,7 +390,7 @@ pub fn read(frame: &OcrFrame) -> Reading {
 
     // Marks that only Kalshi's screens carry, and weaker ones that count
     // only alongside those.
-    let has_kalshi_word = any(&|n| has_word(n, "kalshi"));
+    let has_app_name = any(&|n| names_app(n, &app));
     let target_price = any(&|n| n.contains("target price"));
     let read_rules = any(&|n| n.contains("read rules"));
     let available = any(&|n| has_word(n, "available"));
@@ -406,7 +428,12 @@ pub fn read(frame: &OcrFrame) -> Reading {
     .iter()
     .filter(|hit| **hit)
     .count();
-    let strong = strong_besides_name + usize::from(has_kalshi_word);
+    let strong = strong_besides_name + usize::from(has_app_name);
+    let in_app = if is_kalshi {
+        strong >= 2 || (strong >= 1 && weak >= 2)
+    } else {
+        has_app_name
+    };
 
     let home_labels = lines
         .iter()
@@ -416,23 +443,33 @@ pub fn read(frame: &OcrFrame) -> Reading {
     // Prices and percentages are what Kalshi's own lists are made of; a
     // Home Screen has at most a widget or two with one.
     let priced = lines.iter().filter(|(_, n)| n.contains(['$', '%'])).count();
-    let looks_like_home = strong_besides_name == 0
+    let looks_like_home = (strong_besides_name == 0 || !is_kalshi)
         && priced <= 2
         && ((home_labels >= 2 && rows >= 2) || home_labels >= 4);
-    let foreign = any(&|n| FOREIGN.iter().any(|f| n.contains(f)));
-    // iOS asking something on Kalshi's behalf ("Kalshi" Would Like to…).
-    let system_dialog = any(&|n| has_word(n, "kalshi") && n.contains("would like"));
+    // The allowed app's own name is not a sign of another app, and
+    // "buying power" is only a sign of one when the app is Kalshi, which
+    // never says it.
+    let foreign = any(&|n| {
+        FOREIGN.iter().any(|f| {
+            n.contains(f)
+                && !f.contains(app.as_str())
+                && !app.contains(f)
+                && (is_kalshi || *f != "buying power")
+        })
+    });
+    // iOS asking something on the app's behalf ("Kalshi" Would Like to…).
+    let system_dialog = any(&|n| names_app(n, &app) && n.contains("would like"));
 
     let kind = if looks_like_home {
         ScreenKind::HomeScreen {
             kalshi: lines
                 .iter()
-                .find(|(_, n)| n == "kalshi")
+                .find(|(_, n)| *n == app)
                 .map(|(line, _)| icon_area(line, frame)),
         }
     } else if foreign {
         ScreenKind::Unknown
-    } else if strong >= 2 || (strong >= 1 && weak >= 2) || system_dialog {
+    } else if in_app || system_dialog {
         if slide_buy.is_some() || (target_price && (available || read_rules)) {
             let side = slide_buy.and_then(|line| {
                 let normed = norm(&line.text);
@@ -496,8 +533,8 @@ pub fn read(frame: &OcrFrame) -> Reading {
 }
 
 /// What the screen is. See [`read`] for the controls on it.
-pub fn classify(frame: &OcrFrame) -> ScreenKind {
-    read(frame).kind
+pub fn classify(frame: &OcrFrame, app: &str) -> ScreenKind {
+    read(frame, app).kind
 }
 
 /// Text that is only an amount of money: "$0.10", "$", "0.10", ".10".
@@ -688,10 +725,6 @@ fn block(reason: impl Into<String>) -> Decision {
     }
 }
 
-/// Reason given when a gesture is refused because the phone is not in
-/// Kalshi.
-pub const LEFT_KALSHI: &str = "Left Kalshi";
-
 /// Judge one gesture against the screen it would land on.
 ///
 /// `text` is the screen's text, or why it could not be read. `screen` is
@@ -721,7 +754,8 @@ pub fn decide(
             }
         }
     };
-    let reading = read(frame);
+    let reading = read(frame, &limits.app);
+    let app = limits.app.as_str();
     let scale = |x: f64, y: f64| {
         (
             x / screen.width.max(1.0) * frame.width,
@@ -748,19 +782,19 @@ pub fn decide(
 
     match &reading.kind {
         ScreenKind::Unknown => Decision::Block {
-            reason: format!(
-                "{LEFT_KALSHI}: this screen isn’t Kalshi, so only Home is allowed"
-            ),
+            reason: format!("Left {app}: this screen isn’t {app}, so only Home is allowed"),
             retry: true,
         },
         ScreenKind::HomeScreen { kalshi } => match (gesture, kalshi, touch) {
             (Gesture::Tap { .. }, Some(icon), Some(point)) if icon.contains(point) => {
                 Decision::Allow(Note::Plain)
             }
-            (_, None, _) => block(
-                "On the Home Screen only the Kalshi icon may be tapped, and it isn’t on this page. Put Kalshi on the first Home Screen page",
-            ),
-            _ => block("On the Home Screen only the Kalshi icon may be tapped"),
+            (_, None, _) => block(format!(
+                "On the Home Screen only the {app} icon may be tapped, and it isn’t on this page. Put {app} on the first Home Screen page"
+            )),
+            _ => block(format!(
+                "On the Home Screen only the {app} icon may be tapped"
+            )),
         },
         ScreenKind::KalshiMarket | ScreenKind::KalshiOrderSheet { .. } | ScreenKind::KalshiOther => {
             debug_assert!(reading.is_kalshi());
@@ -815,7 +849,7 @@ fn decide_buy(
     if !reading.names_market(&limits.market) {
         return block(format!(
             "Buying is only allowed in the {} market, and this order isn’t for it",
-            limits.market
+            limits.market.trim()
         ));
     }
     match amount {
@@ -850,10 +884,13 @@ fn decide_buy(
     let buy = BuyInfo {
         side: *side,
         stake_cents: stake,
-        market: reading
-            .market_text
-            .clone()
-            .unwrap_or_else(|| limits.market.clone()),
+        market: reading.market_text.clone().unwrap_or_else(|| {
+            if limits.market.trim().is_empty() {
+                limits.app.clone()
+            } else {
+                limits.market.clone()
+            }
+        }),
     };
     if limits.confirm_each_buy {
         let approved = approval
@@ -987,7 +1024,7 @@ pub fn gate(
                         kind: EventKind::Sell,
                         side: None,
                         stake_cents: 0,
-                        market: read_market(&text),
+                        market: read_market(&text, &limits.app),
                         reason: None,
                     };
                     ledger.record(now, event);
@@ -1065,8 +1102,23 @@ pub fn gate(
 }
 
 /// The market's name on a screen, for a ledger line.
-fn read_market(text: &Result<OcrFrame, String>) -> Option<String> {
-    text.as_ref().ok().and_then(|frame| read(frame).market_text)
+fn read_market(text: &Result<OcrFrame, String>, app: &str) -> Option<String> {
+    text.as_ref()
+        .ok()
+        .and_then(|frame| read(frame, app).market_text)
+}
+
+/// Whether `open_app` may open `name`: with trading mode on, only the
+/// allowed app.
+pub fn may_open(limits: &TradingLimits, name: &str) -> Result<(), String> {
+    if !limits.enabled || limits.is_allowed_app(name) {
+        return Ok(());
+    }
+    Err(format!(
+        "Only {} may be opened while trading mode is on, not {}",
+        limits.app,
+        name.trim()
+    ))
 }
 
 #[cfg(test)]
@@ -1279,9 +1331,15 @@ mod tests {
         ])
     }
 
+    /// Trading mode on, with the user asked about each buy.
+    fn classify(frame: &OcrFrame) -> ScreenKind {
+        super::classify(frame, "Kalshi")
+    }
+
     fn limits() -> TradingLimits {
         TradingLimits {
             enabled: true,
+            confirm_each_buy: true,
             ..TradingLimits::default()
         }
     }
@@ -1616,7 +1674,7 @@ mod tests {
                 },
             ] {
                 let decision = judge(&other, &gesture);
-                assert!(reason(&decision).starts_with(LEFT_KALSHI), "{gesture:?}");
+                assert!(reason(&decision).starts_with("Left Kalshi"), "{gesture:?}");
                 // The screen may have been caught mid-change.
                 assert!(matches!(decision, Decision::Block { retry: true, .. }));
             }
@@ -1929,11 +1987,33 @@ mod tests {
     }
 
     #[test]
-    fn without_confirm_each_buy_a_good_buy_goes_straight_through() {
+    fn by_default_a_good_buy_goes_straight_through_and_a_bad_one_does_not() {
+        // The defaults, switched on: no confirmation.
         let l = TradingLimits {
-            confirm_each_buy: false,
-            ..limits()
+            enabled: true,
+            ..TradingLimits::default()
         };
+        assert!(!l.confirm_each_buy);
+        // The rails do not lean on the confirmation: without it a wrong
+        // amount, a full day and another market are refused all the same.
+        let no = |screen: &OcrFrame, counters: &Counters| {
+            decide(&l, counters, Ok(screen), &slide_to_buy(), PHONE, None, NOW)
+        };
+        assert!(reason(&no(&order_sheet("$1"), &fresh())).contains("is $1.00"));
+        assert!(reason(&no(&order_sheet("0.10"), &fresh())).contains("can’t read"));
+        let full = Counters {
+            day: NOW.day(),
+            trades: 10,
+            spent_cents: 100,
+        };
+        assert!(reason(&no(&order_sheet("$0.10"), &full)).contains("limit of 10 trades"));
+        let spent = Counters {
+            day: NOW.day(),
+            trades: 2,
+            spent_cents: 95,
+        };
+        assert!(reason(&no(&order_sheet("$0.10"), &spent)).contains("loss limit of $1.00"));
+        assert!(reason(&no(&robinhood_app(), &fresh())).starts_with("Left Kalshi"));
         let decision = decide(
             &l,
             &fresh(),
@@ -1974,6 +2054,133 @@ mod tests {
             assert!(reason(&decision).contains("Moving money"), "{point:?}");
         }
         assert!(allowed(&judge(&portfolio, &tap(120.0, 473.0))));
+    }
+
+    // ---- The user's own rules ------------------------------------------
+
+    #[test]
+    fn the_amount_checked_is_the_one_the_user_set() {
+        let quarter = TradingLimits {
+            stake_cents: 25,
+            confirm_each_buy: false,
+            ..limits()
+        };
+        let buy = |amount: &str| {
+            decide(
+                &quarter,
+                &fresh(),
+                Ok(&order_sheet(amount)),
+                &slide_to_buy(),
+                PHONE,
+                None,
+                NOW,
+            )
+        };
+        assert!(matches!(
+            buy("$0.25"),
+            Decision::Allow(Note::Buy(BuyInfo {
+                stake_cents: 25,
+                ..
+            }))
+        ));
+        assert!(reason(&buy("$0.10")).contains("must be exactly $0.25"));
+        assert!(reason(&buy("$2.50")).contains("must be exactly $0.25"));
+        // The day's money is counted in the user's amounts too.
+        let spent = Counters {
+            day: NOW.day(),
+            trades: 3,
+            spent_cents: 80,
+        };
+        let decision = decide(
+            &quarter,
+            &spent,
+            Ok(&order_sheet("$0.25")),
+            &slide_to_buy(),
+            PHONE,
+            None,
+            NOW,
+        );
+        assert!(reason(&decision).contains("loss limit of $1.00"));
+    }
+
+    #[test]
+    fn with_no_market_named_any_market_of_the_app_may_be_bought() {
+        let any = TradingLimits {
+            market: String::new(),
+            confirm_each_buy: false,
+            ..limits()
+        };
+        let mut sheet = order_sheet("$0.10");
+        for l in &mut sheet.lines {
+            l.text = l.text.replace("ZEC", "BTC");
+        }
+        assert!(allowed(&decide(
+            &any,
+            &fresh(),
+            Ok(&sheet),
+            &slide_to_buy(),
+            PHONE,
+            None,
+            NOW
+        )));
+    }
+
+    #[test]
+    fn another_allowed_app_moves_the_lock_to_it() {
+        let robinhood = TradingLimits {
+            app: "Robinhood".into(),
+            market: String::new(),
+            confirm_each_buy: false,
+            ..limits()
+        };
+        let judge = |screen: &OcrFrame, gesture: &Gesture| {
+            decide(&robinhood, &fresh(), Ok(screen), gesture, PHONE, None, NOW)
+        };
+        // On the Home Screen its icon is the one that opens; Kalshi's no
+        // longer does.
+        let home = home_screen();
+        assert!(allowed(&judge(&home, &tap(455.0, 890.0))));
+        assert!(reason(&judge(&home, &tap(285.0, 890.0))).contains("only the Robinhood icon"));
+        // Kalshi is now the other app.
+        assert!(reason(&judge(&market_page(), &tap(185.0, 1395.0))).starts_with("Left Robinhood"));
+        // A screen showing the app's name can be used…
+        let mut screen = robinhood_app();
+        screen
+            .lines
+            .push(line("Robinhood", 300.0, 60.0, 140.0, 24.0));
+        assert_eq!(
+            super::classify(&screen, "Robinhood"),
+            ScreenKind::KalshiOther
+        );
+        assert!(allowed(&judge(&screen, &tap(170.0, 1315.0))));
+        // …but a buy there cannot be checked, so it is refused.
+        screen.lines.push(line("Buy", 330.0, 1200.0, 60.0, 30.0));
+        assert!(reason(&judge(&screen, &tap(360.0, 1215.0))).contains("can’t check the amount"));
+        // One without its name cannot.
+        assert_eq!(
+            super::classify(&robinhood_app(), "Robinhood"),
+            ScreenKind::Unknown
+        );
+        // A "Slide to buy" sheet in it is held to the amount like Kalshi's.
+        let mut sheet = order_sheet("$1");
+        sheet
+            .lines
+            .push(line("Robinhood", 300.0, 60.0, 140.0, 24.0));
+        assert!(reason(&judge(&sheet, &slide_to_buy())).contains("must be exactly $0.10"));
+    }
+
+    #[test]
+    fn only_the_allowed_app_may_be_opened_in_trading_mode() {
+        assert_eq!(may_open(&limits(), " kalshi "), Ok(()));
+        let why = may_open(&limits(), "Robinhood").unwrap_err();
+        assert!(why.contains("Only Kalshi may be opened"), "{why}");
+        let other = TradingLimits {
+            app: "Robinhood".into(),
+            ..limits()
+        };
+        assert!(may_open(&other, "Robinhood").is_ok() && may_open(&other, "Kalshi").is_err());
+        // With trading mode off, anything.
+        assert!(may_open(&TradingLimits::default(), "Robinhood").is_ok());
     }
 
     // ---- The whole gate -------------------------------------------------
@@ -2268,7 +2475,7 @@ mod tests {
     fn leaving_kalshi_is_refused_and_written_down_once() {
         let mut phone = Script::showing(vec![robinhood_app()]);
         let why = blocked(pass(&mut phone, &limits(), &tap(370.0, 1455.0)));
-        assert!(why.starts_with(LEFT_KALSHI), "{why}");
+        assert!(why.starts_with("Left Kalshi"), "{why}");
         assert_eq!(phone.reads, 1 + RETRIES as usize);
         assert!(phone.performed.is_empty());
         blocked(pass(&mut phone, &limits(), &tap(370.0, 1455.0)));
