@@ -1664,6 +1664,318 @@ textarea::placeholder {
   pointer-events: none;
 }
 
+/* ---- Trading: switches, rule fields, meters, ledger, confirm ---------- */
+
+.switch {
+  flex-shrink: 0;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.switch-track {
+  width: 52px;
+  height: 32px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline-strong);
+  background: var(--panel-strong);
+  transition: background 0.15s ease;
+}
+
+.switch-thumb {
+  display: block;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--text-2);
+  transition:
+    transform 0.15s ease,
+    background 0.15s ease;
+}
+
+.switch[aria-checked="true"] .switch-track {
+  background: #fff;
+  border-color: #fff;
+}
+
+.switch[aria-checked="true"] .switch-thumb {
+  background: #000;
+  transform: translateX(20px);
+}
+
+.switch-label {
+  min-width: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+}
+
+.rule-field {
+  flex: 0 1 180px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-3);
+  font-weight: 600;
+}
+
+.rule-field .field {
+  flex: 1 1 auto;
+  width: 100%;
+  font-variant-numeric: tabular-nums;
+}
+
+.textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  user-select: text;
+  cursor: text;
+}
+
+.list-row.stack,
+.playbook {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+  padding: 20px;
+}
+
+.list-row.stack > *,
+.playbook > * {
+  flex: 0 0 auto;
+}
+
+.row-note.inline {
+  flex: 1 1 auto;
+}
+
+.meters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.meter {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 20px 20px;
+  min-width: 0;
+}
+
+.meter-value {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.meter-value span {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.meter-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-strong);
+  overflow: hidden;
+}
+
+.meter-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: #fff;
+}
+
+.meter-bar span.full {
+  background: var(--warn);
+}
+
+.notice-line {
+  margin: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(251, 191, 36, 0.3);
+  background: rgba(251, 191, 36, 0.08);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+
+.notice-line svg {
+  flex-shrink: 0;
+  color: var(--warn);
+}
+
+.run-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.run-row .fine {
+  flex: 1 1 240px;
+}
+
+.ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ledger-row {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 4px 14px;
+  min-height: 52px;
+  padding: 14px 20px;
+  font-size: 14px;
+}
+
+.ledger-row + .ledger-row {
+  border-top: 1px solid var(--hairline);
+}
+
+.ledger-kind {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
+
+.ledger-kind.buy {
+  color: var(--ok-text);
+}
+
+.ledger-kind.blocked {
+  color: var(--bad-text);
+}
+
+.ledger-what {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-2);
+  user-select: text;
+}
+
+.ledger-time {
+  font-size: 13px;
+  color: var(--text-3);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.rails {
+  align-self: center;
+  max-width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px 4px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  background: var(--panel);
+  color: var(--text-2);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.rails:hover {
+  background: var(--panel-strong);
+}
+
+.rails-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+.modal {
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 28px;
+  border-radius: 28px;
+  border: 1px solid var(--hairline-strong);
+  background: #0a0a0a;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.modal-market {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.modal-actions button {
+  flex: 1 1 0;
+  padding: 0 12px;
+}
+
 /* ---- Narrow windows ---------------------------------------------------- */
 
 @media (max-width: 700px) {
@@ -1688,6 +2000,51 @@ textarea::placeholder {
 
   .row-link > svg {
     display: none;
+  }
+
+  .rule-field {
+    flex: 1 1 100%;
+  }
+
+  .ledger-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 12px 16px;
+  }
+
+  .ledger-what {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .list-row.stack,
+  .playbook {
+    padding: 16px;
+  }
+
+  .meter {
+    padding: 14px 16px 16px;
+  }
+
+  .meter-value {
+    font-size: 26px;
+  }
+
+  .rails {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px 10px;
+    padding: 4px 12px 6px 4px;
+    border-radius: 24px;
+  }
+
+  .rails-summary {
+    font-size: 12px;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .modal {
+    padding: 22px;
   }
 
   /* The check in the badge already says it. */

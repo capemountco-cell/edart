@@ -133,3 +133,9 @@ export const AlertIcon = ({ size }: Props) => (
     <path d="M12 4l9 16H3zM12 10v4M12 17h.01" />
   </Icon>
 );
+export const TrendIcon = ({ size }: Props) => (
+  <Icon size={size}>
+    <path d="M3.5 17 9 11.5l3.5 3.5 8-8" />
+    <path d="M15 7h5.5v5.5" />
+  </Icon>
+);

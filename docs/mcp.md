@@ -137,3 +137,13 @@ What it does not do:
   `mcp::set_screenshot_provider`.
 - To try a client without a Mac or a phone:
   `cargo run -p edart-core --example mcp_demo`.
+
+## Trading mode
+
+When trading mode is on (the Trading screen), every gesture a connected
+tool asks for is checked like the agent's own: the text on the iPhone's
+screen is read on the Mac first, and a tap, swipe or typed text that the
+rules do not allow is not sent. The tool call comes back as an error
+(`isError: true`) whose text starts with "Trading rails:" and says why,
+for example that the screen is not the allowed app or that an order
+amount is not the amount set in the rules.

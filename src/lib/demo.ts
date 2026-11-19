@@ -4,13 +4,17 @@
  *
  * `?demo&screen=phones` picks a screen; `&chat=run` or `&chat=done` fills
  * the agent chat; `&mirror=off` shows the Control screen without a
- * mirror; `&sheet=agent` opens the agent sheet in a narrow window.
+ * mirror; `&sheet=agent` opens the agent sheet in a narrow window;
+ * `&screen=trading` shows the Trading screen, `&trading=off` with the
+ * rails off, and `&confirm=buy` with a buy waiting for approval.
  */
 import type {
   AgentStatus,
   BluetoothStatus,
+  LedgerEvent,
   MirrorStatus,
   SettingsView,
+  TradingView,
   UsbStatus,
 } from "./native";
 
@@ -89,6 +93,8 @@ export const DEMO_SETTINGS: SettingsView = {
   apiBase: "https://edart-api.lovable.app",
   apiBaseIsDefault: true,
   path: "/Users/cape/Library/Application Support/com.capemountco.edart/settings.json",
+  instructions: "",
+  allowTyping: false,
 };
 
 export const DEMO_AGENT_IDLE: AgentStatus = {
@@ -152,3 +158,112 @@ export function demoAgent(): AgentStatus {
   if (chat === "done") return DEMO_AGENT_DONE;
   return DEMO_AGENT_IDLE;
 }
+
+/** The built-in playbook, shortened: the real one comes from Rust. */
+const DEMO_PLAYBOOK = `You are trading on this iPhone in the Kalshi app only. Edart enforces hard limits and stops you if you break one, so follow them exactly:
+- Use only the Kalshi app. Never open another app, a link, a notification or Settings.
+- Trade only the "ZEC 15 min" up/down market.
+- Every buy is exactly $0.10. On the order sheet tap the keypad keys 0 . 1 0, check that the amount reads $0.10, and only then slide "Slide to buy".
+How to trade:
+1. Open the ZEC 15 min market and read the target price, the current price, the time left and the Up and Down prices.
+2. Consider buying a side only when its price is under 30% and the chart and recent momentum suggest it is likely to rise. If that is not clearly the case, wait.
+3. After a buy, watch the position: wait up to 30 seconds at a time and check again.
+4. When the position is up 50% to 100%, sell it to cash out. If it falls, let it expire.`;
+
+const DEMO_TRADING_ON: TradingView = {
+  enabled: true,
+  stakeCents: 10,
+  maxTradesPerDay: 10,
+  maxLossCentsPerDay: 100,
+  confirmEachBuy: false,
+  maxSteps: 120,
+  app: "Kalshi",
+  market: "ZEC 15 min",
+  worstCaseCents: 100,
+  summary: "Kalshi only · $0.10 · 3/10 buys · $0.30/$1.00",
+  playbook: DEMO_PLAYBOOK,
+  playbookIsDefault: true,
+  today: { day: "2026-11-19", trades: 3, spentCents: 30 },
+  tradesLeft: 7,
+  ledgerError: null,
+  pending: null,
+};
+
+export function demoTrading(): TradingView {
+  if (demoParam("trading") === "off") {
+    return {
+      ...DEMO_TRADING_ON,
+      enabled: false,
+      today: { day: "2026-11-19", trades: 0, spentCents: 0 },
+      tradesLeft: 10,
+      summary: "Kalshi only · $0.10 · 0/10 buys · $0.00/$1.00",
+    };
+  }
+  if (demoParam("confirm") === "buy") {
+    return {
+      ...DEMO_TRADING_ON,
+      confirmEachBuy: true,
+      pending: {
+        summary: "Up, $0.10, ZEC 15 min",
+        buy: { side: "up", stakeCents: 10, market: "ZEC 15 min" },
+        secondsLeft: 48,
+      },
+    };
+  }
+  return DEMO_TRADING_ON;
+}
+
+/** 2026-11-19, 8:14 pm local, in seconds. */
+const DEMO_NOW = Date.UTC(2026, 10, 19, 20, 14) / 1000;
+
+export const DEMO_LEDGER: LedgerEvent[] =
+  demoParam("trading") === "off"
+    ? []
+    : [
+        {
+          time: DEMO_NOW,
+          day: "2026-11-19",
+          kind: "blocked",
+          stakeCents: 0,
+          reason: "The order amount is $1.00, and a buy must be exactly $0.10",
+        },
+        {
+          time: DEMO_NOW - 9 * 60,
+          day: "2026-11-19",
+          kind: "buy",
+          side: "down",
+          stakeCents: 10,
+          market: "ZEC 15 min",
+        },
+        {
+          time: DEMO_NOW - 21 * 60,
+          day: "2026-11-19",
+          kind: "sell",
+          stakeCents: 0,
+          market: "ZEC 15 min",
+        },
+        {
+          time: DEMO_NOW - 29 * 60,
+          day: "2026-11-19",
+          kind: "buy",
+          side: "up",
+          stakeCents: 10,
+          market: "ZEC 15 min",
+        },
+        {
+          time: DEMO_NOW - 47 * 60,
+          day: "2026-11-19",
+          kind: "blocked",
+          stakeCents: 0,
+          reason:
+            "Left Kalshi: this screen isn’t Kalshi, so only Home is allowed",
+        },
+        {
+          time: DEMO_NOW - 52 * 60,
+          day: "2026-11-19",
+          kind: "buy",
+          side: "up",
+          stakeCents: 10,
+          market: "ZEC 15 min",
+        },
+      ];

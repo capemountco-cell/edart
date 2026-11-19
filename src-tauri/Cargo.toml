@@ -33,4 +33,7 @@ dispatch2 = "0.3.1"
 objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "AVCaptureDevice", "AVCaptureInput", "AVCaptureOutputBase", "AVCaptureVideoDataOutput", "AVCaptureSession", "AVMediaFormat"] }
 objc2-core-media = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-video", "CMSampleBuffer"] }
 objc2-core-video = { version = "0.3.2", default-features = false, features = ["std", "bitflags", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
-objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString", "CFCGTypes"] }
+# Trading rails: read the text on the mirrored screen (on this Mac) before
+# a gesture is sent.
+objc2-vision = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-foundation", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNTypes"] }

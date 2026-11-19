@@ -8,7 +8,9 @@ import {
   PhonesIcon,
   ShieldIcon,
   SlidersIcon,
+  TrendIcon,
 } from "./components/icons";
+import { ConfirmBuy } from "./components/ConfirmBuy";
 import { demoParam } from "./lib/demo";
 import { nativeAvailable } from "./lib/native";
 import { useEdart, useNarrow } from "./lib/useEdart";
@@ -17,9 +19,11 @@ import { Control, StatusPill } from "./screens/Control";
 import { Phones } from "./screens/Phones";
 import { Preferences } from "./screens/Preferences";
 import { Setup } from "./screens/Setup";
+import { Trading } from "./screens/Trading";
 
 export type Route =
   | "control"
+  | "trading"
   | "phones"
   | "setup"
   | "connectors"
@@ -27,6 +31,7 @@ export type Route =
 
 const NAV: { route: Route; label: string; icon: ReactNode }[] = [
   { route: "control", label: "Control", icon: <PhoneIcon /> },
+  { route: "trading", label: "Trading", icon: <TrendIcon /> },
   { route: "phones", label: "Phones", icon: <PhonesIcon /> },
   { route: "setup", label: "Permissions", icon: <ShieldIcon /> },
   { route: "connectors", label: "Connectors", icon: <ConnectorsIcon /> },
@@ -125,11 +130,19 @@ export function App() {
           </p>
         )}
         {route === "control" && <Control app={app} narrow={narrow} go={go} />}
+        {route === "trading" && <Trading app={app} go={go} />}
         {route === "phones" && <Phones app={app} go={go} />}
         {route === "setup" && <Setup app={app} go={go} />}
         {route === "connectors" && <Connectors />}
         {route === "preferences" && <Preferences app={app} />}
       </main>
+
+      {app.trading?.pending && (
+        <ConfirmBuy
+          pending={app.trading.pending}
+          onAnswer={(approve) => void app.answerBuy(approve)}
+        />
+      )}
 
       {narrow && menu && (
         <div className="sheet-layer">

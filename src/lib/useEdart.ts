@@ -3,32 +3,42 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   DEMO_AGENT_DONE,
   DEMO_BLUETOOTH,
+  DEMO_LEDGER,
   DEMO_MIRROR,
   DEMO_MIRROR_OFF,
   DEMO_SETTINGS,
   DEMO_USB,
   demoAgent,
   demoParam,
+  demoTrading,
   isDemo,
 } from "./demo";
 import {
   agentStatus,
   bluetoothStatus,
   clearAgent,
+  confirmTrade,
   getSettings,
+  getTrading,
   mirrorStatus,
   nativeAvailable,
   onAgentChanged,
+  onTradingChanged,
   perform,
+  setTrading,
   startAgent,
   stopAgent,
+  tradingLedger,
   usbStatus,
   type AgentStatus,
   type BluetoothStatus,
   type Gesture,
+  type LedgerEvent,
   type MirrorStatus,
   type Screen,
   type SettingsView,
+  type TradingChange,
+  type TradingView,
   type UsbStatus,
 } from "./native";
 
@@ -65,6 +75,10 @@ export function useEdart() {
   const [settings, setSettings] = useState<SettingsView | null>(
     demo ? DEMO_SETTINGS : null,
   );
+  const [trading, setTradingView] = useState<TradingView | null>(
+    demo ? demoTrading : null,
+  );
+  const [ledger, setLedger] = useState<LedgerEvent[]>(demo ? DEMO_LEDGER : []);
   /** True once the first statuses have arrived (or never will). */
   const [loaded, setLoaded] = useState(demo || !nativeAvailable());
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -106,13 +120,27 @@ export function useEdart() {
     }
   }, [demo]);
 
+  const refreshTrading = useCallback(async () => {
+    if (demo || !nativeAvailable()) return;
+    try {
+      const view = await getTrading();
+      setTradingView(view);
+      setLedger(await tradingLedger());
+    } catch {
+      // The Trading screen shows the error when the user changes a rule.
+    }
+  }, [demo]);
+
   useEffect(() => {
     void refresh();
     void refreshAgent();
     void refreshSettings();
+    void refreshTrading();
     const timer = window.setInterval(() => {
       void refresh();
       void refreshAgent();
+      // The confirmation's countdown and the day's count move on their own.
+      void refreshTrading();
     }, 1000);
     let stopListening = () => {};
     let gone = false;
@@ -120,12 +148,18 @@ export function useEdart() {
       if (gone) stop();
       else stopListening = stop;
     });
+    let stopTrading = () => {};
+    void onTradingChanged(() => void refreshTrading()).then((stop) => {
+      if (gone) stop();
+      else stopTrading = stop;
+    });
     return () => {
       gone = true;
       window.clearInterval(timer);
       stopListening();
+      stopTrading();
     };
-  }, [refresh, refreshAgent, refreshSettings]);
+  }, [refresh, refreshAgent, refreshSettings, refreshTrading]);
 
   const bluetoothConnected = bluetooth?.phase === "connected";
   const usbReady = usb?.phase === "ready";
@@ -240,6 +274,49 @@ export function useEdart() {
     setAgent((a) => ({ ...a, running: false, step: 0, entries: [] }));
   }, [demo, refreshAgent]);
 
+  /** Change a trading rule. Rejects with a sentence when out of range. */
+  const changeTrading = useCallback(
+    async (change: TradingChange) => {
+      if (!demo) {
+        setTradingView(await setTrading(change));
+        return;
+      }
+      setTradingView((view) => {
+        if (!view) return view;
+        const next = { ...view, ...change };
+        const playbook = change.playbook ?? view.playbook;
+        return {
+          ...next,
+          playbook: playbook === "" ? view.playbook : playbook,
+          worstCaseCents: Math.min(
+            next.maxLossCentsPerDay,
+            next.stakeCents * next.maxTradesPerDay,
+          ),
+        };
+      });
+    },
+    [demo],
+  );
+
+  /** Start the agent on the trading playbook. */
+  const startTradingRun = useCallback(
+    () => ask(demo ? "Trading run: follow the playbook" : ""),
+    [ask, demo],
+  );
+
+  /** Answer the buy that is waiting for approval. */
+  const answerBuy = useCallback(
+    async (approve: boolean) => {
+      if (!demo) {
+        await confirmTrade(approve);
+        await refreshTrading();
+        return;
+      }
+      setTradingView((view) => (view ? { ...view, pending: null } : view));
+    },
+    [demo, refreshTrading],
+  );
+
   return {
     demo,
     loaded,
@@ -250,6 +327,11 @@ export function useEdart() {
     agent,
     settings,
     setSettings,
+    trading,
+    ledger,
+    changeTrading,
+    answerBuy,
+    startTradingRun,
     refresh,
     bluetoothConnected,
     usbReady,
