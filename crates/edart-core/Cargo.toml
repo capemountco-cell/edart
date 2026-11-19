@@ -8,6 +8,5 @@ publish = false
 
 [dependencies]
 serde = { workspace = true }
-
-[dev-dependencies]
+# The MCP connector speaks JSON-RPC, so JSON is part of the logic now.
 serde_json = { workspace = true }

@@ -7,5 +7,6 @@
 pub mod gatt;
 pub mod gesture;
 pub mod hid;
+pub mod mcp;
 pub mod status;
 pub mod usb;
