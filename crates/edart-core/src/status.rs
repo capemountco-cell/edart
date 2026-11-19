@@ -19,6 +19,9 @@ pub struct BluetoothStatus {
     /// An iPhone has read or written one of Edart's characteristics: it
     /// found Edart and is pairing, even if it has not subscribed yet.
     pub phone_seen: bool,
+    /// The user paused Edart: its keyboard-and-mouse services are taken
+    /// down so the iPhone is free, but the pairing is kept for Resume.
+    pub paused: bool,
     /// The name the iPhone lists Edart under: the Mac's computer name, not
     /// "Edart" (iOS shows the device, not the app).
     pub mac_name: Option<String>,
@@ -57,12 +60,16 @@ pub enum Phase {
     WaitingForPhone,
     Pairing,
     Connected,
+    Paused,
 }
 
 impl BluetoothStatus {
     pub fn phase(&self) -> Phase {
         if !self.supported || self.state == "unsupported" {
             return Phase::Unsupported;
+        }
+        if self.paused {
+            return Phase::Paused;
         }
         match self.state.as_str() {
             "notStarted" => return Phase::NotStarted,
@@ -152,6 +159,16 @@ mod tests {
         assert_eq!(s.events.len(), MAX_EVENTS);
         assert_eq!(s.events[0], "e5");
         assert_eq!(s.events.last().unwrap(), &format!("e{}", MAX_EVENTS + 4));
+    }
+
+    #[test]
+    fn paused_wins_over_the_link_state() {
+        let mut s = on();
+        s.subscribed = true;
+        s.paused = true;
+        assert_eq!(s.phase(), Phase::Paused);
+        s.paused = false;
+        assert_eq!(s.phase(), Phase::Connected);
     }
 
     #[test]

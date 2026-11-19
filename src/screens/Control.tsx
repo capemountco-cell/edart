@@ -3,7 +3,12 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Chat } from "../components/Chat";
 import { HomeIcon, KeyboardIcon, MoreIcon } from "../components/icons";
 import { Mirror } from "../components/Mirror";
-import { startMirror, type Gesture } from "../lib/native";
+import {
+  startMirror,
+  type Gesture,
+  pauseBluetooth,
+  resumeBluetooth,
+} from "../lib/native";
 import { linkLabel } from "../lib/phase";
 import { edgeSwipe, GESTURE_MODES, type GestureMode } from "../lib/pointer";
 import { demoParam } from "../lib/demo";
@@ -150,6 +155,7 @@ export function Control({
               <h1 className="stage-title">{app.phoneName}</h1>
             </div>
             <StatusPill app={app} />
+            <PauseButton app={app} />
           </header>
         )}
 
@@ -291,16 +297,47 @@ export function Control({
   );
 }
 
+/**
+ * Pause frees the iPhone without forgetting the pairing (and stops any
+ * agent run); Resume takes control again.
+ */
+export function PauseButton({ app }: { app: Edart }) {
+  const [busy, setBusy] = useState(false);
+  const paused = app.bluetooth?.paused ?? false;
+  if (!paused && !app.bluetoothConnected) return null;
+  const toggle = async () => {
+    setBusy(true);
+    try {
+      if (!app.demo) await (paused ? resumeBluetooth() : pauseBluetooth());
+    } finally {
+      setBusy(false);
+      await app.refresh();
+    }
+  };
+  return (
+    <button
+      type="button"
+      className={paused ? "primary small" : "secondary small"}
+      disabled={busy}
+      onClick={() => void toggle()}
+    >
+      {busy ? (paused ? "Resuming…" : "Pausing…") : paused ? "Resume" : "Pause"}
+    </button>
+  );
+}
+
 /** "Connected", or what is still missing, in one pill. */
 export function StatusPill({ app, name }: { app: Edart; name?: boolean }) {
   const state = app.controlReady ? "ok" : app.mirrorHasPhone ? "warn" : "idle";
   const label = name
     ? app.phoneName
-    : state === "ok"
-      ? "Connected"
-      : state === "warn"
-        ? "Screen only"
-        : "Not connected";
+    : app.bluetooth?.paused
+      ? "Paused"
+      : state === "ok"
+        ? "Connected"
+        : state === "warn"
+          ? "Screen only"
+          : "Not connected";
   return (
     <span className={`pill pill-${state}`}>
       <span className="pill-dot" aria-hidden="true" />

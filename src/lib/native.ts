@@ -33,7 +33,8 @@ export type Phase =
   | "broken"
   | "waitingForPhone"
   | "pairing"
-  | "connected";
+  | "connected"
+  | "paused";
 
 /** Mirrors `edart_core::status::StatusView`. */
 export interface BluetoothStatus {
@@ -44,6 +45,7 @@ export interface BluetoothStatus {
   advertising: boolean;
   subscribed: boolean;
   phoneSeen: boolean;
+  paused: boolean;
   macName: string | null;
   failedServices: string[];
   error: string | null;
@@ -117,6 +119,8 @@ export const usbPrepare = () => call<void>("usb_prepare");
 export const bluetoothStatus = () => call<BluetoothStatus>("bt_status");
 export const startBluetooth = () => call<void>("bt_start");
 export const restartBluetooth = () => call<void>("bt_restart");
+export const pauseBluetooth = () => call<void>("bt_pause");
+export const resumeBluetooth = () => call<void>("bt_resume");
 export const reachOut = () => call<void>("bt_reach_out");
 export const openBluetoothSettings = () =>
   call<void>("open_bluetooth_settings");

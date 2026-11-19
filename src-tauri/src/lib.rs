@@ -94,6 +94,22 @@ fn bt_restart(app: AppHandle) -> Result<(), String> {
         .map_err(|e| e.to_string())
 }
 
+/// Pause: stop any agent run and free the iPhone (no pointer, no taps)
+/// without forgetting the pairing.
+#[tauri::command]
+fn bt_pause(app: AppHandle) -> Result<(), String> {
+    agent::stop(&app);
+    app.run_on_main_thread(ble::pause)
+        .map_err(|e| e.to_string())
+}
+
+/// Undo a pause: the paired iPhone reconnects by itself.
+#[tauri::command]
+fn bt_resume(app: AppHandle) -> Result<(), String> {
+    app.run_on_main_thread(ble::resume)
+        .map_err(|e| e.to_string())
+}
+
 /// Connect to iPhones already linked to this Mac, from the Mac side.
 #[tauri::command]
 fn bt_reach_out(app: AppHandle) -> Result<(), String> {
@@ -403,6 +419,8 @@ pub fn run() {
             bt_status,
             bt_start,
             bt_restart,
+            bt_pause,
+            bt_resume,
             bt_reach_out,
             open_bluetooth_settings,
             usb_status,

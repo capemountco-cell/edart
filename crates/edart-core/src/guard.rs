@@ -541,9 +541,9 @@ pub fn classify(frame: &OcrFrame, app: &str) -> ScreenKind {
 fn money_token(text: &str) -> Option<String> {
     let compact: String = text.chars().filter(|c| !c.is_whitespace()).collect();
     let ok = !compact.is_empty()
-        && compact
-            .chars()
-            .all(|c| c.is_ascii_digit() || matches!(c, '$' | '.' | ',' | 'O' | 'o' | 'S'));
+        && compact.chars().all(|c| {
+            c.is_ascii_digit() || matches!(c, '$' | '.' | ',' | 'O' | 'o' | 'S' | 'Ø' | 'ø')
+        });
     ok.then_some(compact)
 }
 
@@ -553,7 +553,14 @@ pub fn parse_amount(text: &str) -> Option<Cents> {
     let compact: String = text
         .chars()
         .filter(|c| !c.is_whitespace())
-        .map(|c| if matches!(c, 'O' | 'o') { '0' } else { c })
+        // Kalshi draws zeros slashed; the recogniser may read "Ø" or "O".
+        .map(|c| {
+            if matches!(c, 'O' | 'o' | 'Ø' | 'ø') {
+                '0'
+            } else {
+                c
+            }
+        })
         .collect();
     // The recogniser sometimes reads "$" as "S".
     let rest = compact
@@ -586,13 +593,61 @@ pub fn parse_amount(text: &str) -> Option<Cents> {
 /// The amount on the order sheet, or `None` when it cannot be read for
 /// certain.
 ///
-/// The amount is the large figure between the "Target Price" line and
-/// the "… chance" line (the keypad, whose keys are also digits, is below
-/// that). The recogniser may split it ("$" and "0.10"), so the pieces on
-/// its row are joined left to right. Anything else on that row, any
-/// second figure in that part of the sheet, or a piece read with low
-/// confidence, makes the amount unreadable.
+/// Two independent readings:
+/// - the large figure between the "Target Price" line and the line under
+///   it ("24% chance · 3.66x" or "Pays $0.39 · 3.90x"); the keypad, whose
+///   keys are also digits, is below that. The recogniser may split it
+///   (Kalshi draws a small raised "$" and slashed zeros), so the pieces on
+///   its row are joined left to right. A figure whose "$" wasn't read at
+///   all is not certain enough on its own.
+/// - "Pays $P · Mx": the stake is P ÷ M.
+///
+/// When both are readable they must agree (within a cent), or the amount
+/// is unreadable. When only one is, it is used. Anything else on the
+/// figure's row, a second figure, or low confidence makes the figure
+/// unreadable.
 fn order_amount(frame: &OcrFrame, slide: Option<&OcrLine>) -> Option<Cents> {
+    let figure = order_figure(frame, slide);
+    let implied = pays_stake(frame);
+    match (figure, implied) {
+        (Some(a), Some(b)) if a.abs_diff(b) <= 1 => Some(a),
+        (Some(_), Some(_)) => None,
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (None, None) => None,
+    }
+}
+
+/// "Pays $0.39 · 3.90x" → the stake that pays that much: $0.39 ÷ 3.90 =
+/// 10 cents. `None` unless the line reads cleanly and the division lands
+/// within half a cent of a whole number of cents.
+fn pays_stake(frame: &OcrFrame) -> Option<Cents> {
+    let line = frame
+        .lines
+        .iter()
+        .find(|l| l.confidence >= AMOUNT_CONFIDENCE && norm(&l.text).starts_with("pays "))?;
+    let text = norm(&line.text);
+    let rest = text.strip_prefix("pays ")?;
+    // "$0.39 · 3.90x": the payout, a separator, the multiplier.
+    let mut parts = rest
+        .split(|c: char| c == '·' || c == '•' || c.is_whitespace())
+        .filter(|p| !p.is_empty());
+    let payout = parse_amount(parts.next()?)?;
+    let mult_text = parts.next()?.strip_suffix('x')?;
+    if parts.next().is_some() {
+        return None;
+    }
+    let multiplier: f64 = mult_text.parse().ok()?;
+    if !(multiplier.is_finite() && multiplier >= 1.0) {
+        return None;
+    }
+    let stake = payout as f64 / multiplier;
+    let rounded = stake.round();
+    ((stake - rounded).abs() <= 0.5 && rounded >= 1.0).then_some(rounded as Cents)
+}
+
+/// The large amount figure on the order sheet (see [`order_amount`]).
+fn order_figure(frame: &OcrFrame, slide: Option<&OcrLine>) -> Option<Cents> {
     let lines: Vec<(&OcrLine, String)> = frame
         .lines
         .iter()
@@ -604,17 +659,17 @@ fn order_amount(frame: &OcrFrame, slide: Option<&OcrLine>) -> Option<Cents> {
         .filter(|(_, n)| n.contains("target price"))
         .map(|(l, _)| l.y + l.height)
         .fold(0.0, f64::max);
-    let chance = lines
+    let under = lines
         .iter()
-        .filter(|(l, n)| has_word(n, "chance") && l.y > top)
+        .filter(|(l, n)| (has_word(n, "chance") || n.starts_with("pays ")) && l.y > top)
         .map(|(l, _)| l.y)
         .fold(f64::NAN, f64::min);
-    let anchored = !chance.is_nan();
+    let anchored = !under.is_nan() && top > 0.0;
     let bottom = if anchored {
-        chance
+        under
     } else {
-        // No "chance" line: everything above the sheet's footer, and
-        // only figures that carry their own "$" count (keypad keys do
+        // No line under the figure: everything above the sheet's footer,
+        // and only figures that carry their own "$" count (keypad keys do
         // not).
         lines
             .iter()
@@ -630,13 +685,21 @@ fn order_amount(frame: &OcrFrame, slide: Option<&OcrLine>) -> Option<Cents> {
         .filter(|(l, _)| between(l))
         .filter_map(|(l, _)| money_token(&l.text).map(|token| (*l, token)))
         .collect();
+    // The figure is the tallest piece with digits in it: a raised "$" on
+    // its own is a smaller piece beside it, never the figure.
     let main = figures
         .iter()
+        .filter(|(_, token)| {
+            token
+                .chars()
+                .any(|c| c.is_ascii_digit() || matches!(c, 'O' | 'o' | 'Ø' | 'ø'))
+        })
         .filter(|(_, token)| anchored || token.starts_with(['$', 'S']))
         .map(|(l, _)| *l)
         .max_by(|a, b| a.height.total_cmp(&b.height))?;
+    // Its row reaches a little above it, where a raised "$" sits.
     let on_row = |l: &OcrLine| {
-        l.center_y() >= main.y - main.height * 0.25 && l.center_y() <= main.y + main.height * 1.25
+        l.center_y() >= main.y - main.height * 0.5 && l.center_y() <= main.y + main.height * 1.25
     };
     // Nothing but pieces of the amount may share its row…
     if lines
@@ -1464,6 +1527,90 @@ mod tests {
             l.confidence = 0.1;
         }
         assert_eq!(classify(&page), ScreenKind::Unknown);
+    }
+
+    /// Kalshi's real order sheet, November 2026: a small raised "$" beside
+    /// the large "0.10", slashed zeros, and "Pays $0.39 · 3.90x" under it
+    /// instead of a "chance" line.
+    fn real_order_sheet(amount: &[(&str, f64, f64, f64)], pays: &str) -> OcrFrame {
+        let mut lines = vec![
+            line("ZEC 15 min · $906.9456 target", 60.0, 300.0, 380.0, 24.0),
+            line("Target Price: $906.9456", 120.0, 345.0, 350.0, 34.0),
+            line("UP", 250.0, 420.0, 40.0, 24.0),
+            line("DOWN", 360.0, 420.0, 70.0, 24.0),
+            line(pays, 210.0, 660.0, 260.0, 28.0),
+            line("Predictions · $15.86 available", 200.0, 700.0, 280.0, 20.0),
+            line("Read rules", 290.0, 790.0, 110.0, 22.0),
+            line("Slide to buy Up", 260.0, 1300.0, 200.0, 28.0),
+        ];
+        for (text, x, y, h) in amount {
+            lines.push(line(text, *x, *y, 30.0 * text.chars().count() as f64, *h));
+        }
+        for (row, keys) in [
+            ["1", "2", "3"],
+            ["4", "5", "6"],
+            ["7", "8", "9"],
+            [".", "0", "⌫"],
+        ]
+        .iter()
+        .enumerate()
+        {
+            for (col, key) in keys.iter().enumerate() {
+                lines.push(line(
+                    key,
+                    110.0 + 200.0 * col as f64,
+                    880.0 + 85.0 * row as f64,
+                    24.0,
+                    36.0,
+                ));
+            }
+        }
+        frame(lines)
+    }
+
+    #[test]
+    fn the_real_sheet_with_a_raised_dollar_reads_ten_cents() {
+        // "$" small and higher than the big "0.10".
+        let sheet = real_order_sheet(
+            &[("$", 195.0, 520.0, 40.0), ("0.10", 225.0, 525.0, 110.0)],
+            "Pays $0.39 · 3.90x",
+        );
+        assert_eq!(amount_of(&sheet), Some(10));
+    }
+
+    #[test]
+    fn slashed_zeros_and_a_missing_dollar_still_read() {
+        let sheet = real_order_sheet(&[("Ø.1Ø", 225.0, 525.0, 110.0)], "Pays $0.43 · 4.30x");
+        assert_eq!(amount_of(&sheet), Some(10));
+        let sheet = real_order_sheet(&[("0.10", 225.0, 525.0, 110.0)], "Pays $0.39 · 3.90x");
+        assert_eq!(amount_of(&sheet), Some(10));
+    }
+
+    #[test]
+    fn the_pays_line_alone_confirms_the_stake() {
+        // The big figure wasn't recognised at all.
+        let sheet = real_order_sheet(&[], "Pays $0.39 · 3.90x");
+        assert_eq!(amount_of(&sheet), Some(10));
+        // $3.90 at 3.90x is a dollar, not ten cents.
+        let sheet = real_order_sheet(&[], "Pays $3.90 · 3.90x");
+        assert_eq!(amount_of(&sheet), Some(100));
+    }
+
+    #[test]
+    fn a_figure_that_disagrees_with_the_pays_line_is_unreadable() {
+        let sheet = real_order_sheet(
+            &[("$", 195.0, 520.0, 40.0), ("1.00", 225.0, 525.0, 110.0)],
+            "Pays $0.39 · 3.90x",
+        );
+        assert_eq!(amount_of(&sheet), None);
+    }
+
+    #[test]
+    fn a_garbled_pays_line_proves_nothing() {
+        let sheet = real_order_sheet(&[], "Pays $0.39 3.90");
+        assert_eq!(amount_of(&sheet), None);
+        let sheet = real_order_sheet(&[], "Pays $0.39 · 0.5x");
+        assert_eq!(amount_of(&sheet), None);
     }
 
     #[test]

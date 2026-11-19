@@ -157,6 +157,12 @@ pub fn perform(
     screen: Screen,
     source: Source,
 ) -> Result<(), GateError> {
+    // Paused: nothing reaches the iPhone until Resume.
+    if crate::ble::status().paused {
+        return Err(GateError::Failed(
+            "Edart is paused. Press Resume to control the iPhone again.".into(),
+        ));
+    }
     // If the settings cannot be read there is no knowing whether trading
     // mode is on, so nothing is sent.
     let limits = limits(app).map_err(|why| {
