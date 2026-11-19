@@ -284,7 +284,7 @@ pub fn route(usb_ready: bool, bluetooth_subscribed: bool) -> Result<Route, &'sta
     } else if bluetooth_subscribed {
         Ok(Route::Bluetooth)
     } else {
-        Err("No iPhone is ready yet. Finish the USB setup above first.")
+        Err("No iPhone is connected for control. Pair it over Bluetooth in Permissions first.")
     }
 }
 
