@@ -8,6 +8,5 @@ publish = false
 
 [dependencies]
 serde = { workspace = true }
-
-[dev-dependencies]
+# The agent's request and answer, and the settings file, are JSON.
 serde_json = { workspace = true }
