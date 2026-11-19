@@ -1,4 +1,4 @@
-import type { Phase, UsbPhase } from "./native";
+import type { MirrorPhase, Phase, UsbPhase } from "./native";
 
 /**
  * Headline copy for each phase. The phase itself is decided in Rust.
@@ -197,4 +197,75 @@ export function usbStepStates(
     case "ready":
       return at(4);
   }
+}
+
+/** Headline copy for the screen mirror. The phase is decided in Rust. */
+export function mirrorCopy(phase: MirrorPhase): {
+  title: string;
+  detail: string;
+} {
+  switch (phase) {
+    case "unsupported":
+      return {
+        title: "Needs a Mac",
+        detail: "The iPhone’s screen only shows in the Mac app.",
+      };
+    case "off":
+      return {
+        title: "See your iPhone’s screen",
+        detail:
+          "Plug the iPhone in with a USB cable. macOS lists it as a camera, so it asks for Camera access once.",
+      };
+    case "needsPermission":
+      return {
+        title: "Allow Camera access",
+        detail:
+          "macOS is asking. It lists an iPhone on a cable as a camera; Edart doesn’t use this Mac’s own camera.",
+      };
+    case "denied":
+      return {
+        title: "Camera access is off",
+        detail:
+          "Open System Settings › Privacy & Security › Camera and switch Edart on, then reopen Edart.",
+      };
+    case "noDevice":
+      return {
+        title: "Plug in your iPhone",
+        detail:
+          "Use a USB cable, unlock the iPhone and tap Trust. The screen appears a few seconds later.",
+      };
+    case "starting":
+      return {
+        title: "Starting the screen…",
+        detail: "Keep the iPhone unlocked.",
+      };
+    case "stalled":
+      return {
+        title: "The iPhone isn’t sending its screen",
+        detail:
+          "Unlock it, then unplug the cable and plug it in again. If another app is showing this iPhone’s screen, quit it.",
+      };
+    case "dark":
+      return {
+        title: "The iPhone’s screen is off",
+        detail: "Wake the iPhone and unlock it.",
+      };
+    case "live":
+      return {
+        title: "Screen is live",
+        detail: "Click and drag on it like a finger.",
+      };
+  }
+}
+
+/** How the phone is linked, for the Phones screen: "USB + Bluetooth". */
+export function linkLabel(links: {
+  mirror: boolean;
+  usbControl: boolean;
+  bluetooth: boolean;
+}): string {
+  const parts = [];
+  if (links.mirror || links.usbControl) parts.push("USB");
+  if (links.bluetooth) parts.push("Bluetooth");
+  return parts.length > 0 ? parts.join(" + ") : "Not connected";
 }

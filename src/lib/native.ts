@@ -3,7 +3,8 @@
  * surface is visible in one place and argument shapes cannot drift.
  */
 
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 /** True inside the Tauri window; false in a plain browser tab. */
 export function nativeAvailable(): boolean {
@@ -121,3 +122,112 @@ export const openBluetoothSettings = () =>
   call<void>("open_bluetooth_settings");
 export const perform = (gesture: Gesture, screen: Screen) =>
   call<void>("perform", { gesture, screen });
+
+/** Mirrors `edart_core::mirror::MirrorPhase`. */
+export type MirrorPhase =
+  | "unsupported"
+  | "off"
+  | "needsPermission"
+  | "denied"
+  | "noDevice"
+  | "starting"
+  | "stalled"
+  | "dark"
+  | "live";
+
+/** Mirrors `edart_core::mirror::CameraAccess`. */
+export type CameraAccess =
+  | "unknown"
+  | "notDetermined"
+  | "denied"
+  | "restricted"
+  | "allowed";
+
+/** Mirrors `edart_core::mirror::MirrorStatus`. */
+export interface MirrorStatus {
+  phase: MirrorPhase;
+  access: CameraAccess;
+  deviceName: string | null;
+  /** Size of the mirrored frame; gestures use it as their screen units. */
+  width: number | null;
+  height: number | null;
+  orientation: "portrait" | "landscape" | null;
+  /** Goes up with every new frame. */
+  seq: number;
+  error: string | null;
+  /** Recent mirror events, oldest first. */
+  events: string[];
+}
+
+export const mirrorStatus = () => call<MirrorStatus>("mirror_status");
+/** Start showing the iPhone's screen. Asks for Camera access once. */
+export const startMirror = () => call<void>("mirror_start");
+export const openCameraSettings = () => call<void>("open_camera_settings");
+/**
+ * Address of the newest mirror frame (a JPEG). `n` only makes each address
+ * different, so the webview fetches it again.
+ */
+export const frameUrl = (n: number) =>
+  `${convertFileSrc("frame.jpg", "edart")}?n=${n}`;
+
+/** Mirrors `edart_core::settings::SettingsView`. The token is never sent. */
+export interface SettingsView {
+  tokenSet: boolean;
+  apiBase: string;
+  apiBaseIsDefault: boolean;
+  /** Where the settings file is. */
+  path: string;
+}
+
+/**
+ * Mirrors `edart_core::settings::SettingsChange`. A field left out is left
+ * alone; an empty string clears it.
+ */
+export interface SettingsChange {
+  token?: string;
+  apiBase?: string;
+}
+
+/** Mirrors `edart_core::agent::ConnectionTest`. */
+export interface ConnectionTest {
+  reachable: boolean;
+  token: "accepted" | "refused" | "serviceBroken" | "unexpected" | null;
+  message: string;
+}
+
+export const getSettings = () => call<SettingsView>("settings_get");
+export const setSettings = (change: SettingsChange) =>
+  call<SettingsView>("settings_set", { change });
+/** Check that the AI service answers and accepts the saved token. */
+export const testSettings = () => call<ConnectionTest>("settings_test");
+
+/** Mirrors `edart_core::agent::Entry` (serde tag "kind"). */
+export type AgentEntry =
+  | { kind: "goal"; text: string }
+  | { kind: "step"; n: number; thought: string; action: string }
+  | { kind: "problem"; text: string }
+  | { kind: "finished"; success: boolean; text: string };
+
+/** Mirrors `edart_core::agent::AgentStatus`. */
+export interface AgentStatus {
+  running: boolean;
+  stopping: boolean;
+  step: number;
+  maxSteps: number;
+  entries: AgentEntry[];
+}
+
+export const agentStatus = () => call<AgentStatus>("agent_status");
+/** Start the agent on a goal. Rejects with a sentence when it can't. */
+export const startAgent = (goal: string) => call<void>("agent_start", { goal });
+export const stopAgent = () => call<void>("agent_stop");
+/** Forget the conversation. */
+export const clearAgent = () => call<void>("agent_clear");
+/**
+ * Call `handler` whenever the agent's status changes. Returns a function
+ * that stops listening. Does nothing outside the Tauri window.
+ */
+export async function onAgentChanged(handler: () => void): Promise<() => void> {
+  if (!nativeAvailable()) return () => {};
+  return listen("agent-changed", () => handler());
+}

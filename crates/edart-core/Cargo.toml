@@ -8,6 +8,6 @@ publish = false
 
 [dependencies]
 serde = { workspace = true }
-
-[dev-dependencies]
+# The agent request/answer, the settings file and the MCP connector's
+# JSON-RPC are all JSON.
 serde_json = { workspace = true }
