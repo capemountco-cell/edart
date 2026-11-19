@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 
 import { CheckIcon } from "../components/icons";
+import { Switch } from "../components/Switch";
 import {
   setSettings,
   testSettings,
@@ -14,12 +15,20 @@ export function Preferences({ app }: { app: Edart }) {
   const settings = app.settings;
   const [token, setToken] = useState("");
   const [address, setAddress] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"token" | "address" | "test" | null>(null);
-  const [saved, setSaved] = useState<"token" | "address" | null>(null);
+  const [instructions, setInstructions] = useState<string | null>(null);
+  const [busy, setBusy] = useState<
+    "token" | "address" | "test" | "agent" | null
+  >(null);
+  const [saved, setSaved] = useState<"token" | "address" | "agent" | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<ConnectionTest | null>(null);
 
-  const save = async (what: "token" | "address", change: SettingsChange) => {
+  const save = async (
+    what: "token" | "address" | "agent",
+    change: SettingsChange,
+  ) => {
     setBusy(what);
     setError(null);
     setSaved(null);
@@ -33,11 +42,14 @@ export function Preferences({ app }: { app: Edart }) {
             change.token === undefined
               ? settings.tokenSet
               : change.token !== "",
+          instructions: change.instructions?.trim() ?? settings.instructions,
+          allowTyping: change.allowTyping ?? settings.allowTyping,
         });
       }
       setSaved(what);
       if (what === "token") setToken("");
-      else setAddress(null);
+      else if (what === "address") setAddress(null);
+      else if (change.instructions !== undefined) setInstructions(null);
     } catch (cause) {
       setError(errorText(cause));
     } finally {
@@ -69,6 +81,10 @@ export function Preferences({ app }: { app: Edart }) {
   const submitToken = (event: FormEvent) => {
     event.preventDefault();
     if (token.trim() !== "") void save("token", { token });
+  };
+  const submitInstructions = (event: FormEvent) => {
+    event.preventDefault();
+    if (instructions !== null) void save("agent", { instructions });
   };
   const submitAddress = (event: FormEvent) => {
     event.preventDefault();
@@ -184,6 +200,70 @@ export function Preferences({ app }: { app: Edart }) {
         )}
       </section>
 
+      <section className="group" aria-labelledby="agent-title">
+        <h2 id="agent-title" className="eyebrow">
+          Agent
+        </h2>
+        <div className="card list">
+          <form className="list-row wrap stack" onSubmit={submitInstructions}>
+            <label htmlFor="instructions" className="row-text">
+              <strong>Standing instructions</strong>
+              <span>
+                Told to the agent with every step, whatever you ask it: how you
+                like things done, what it must never do. Up to 8,000 characters.
+              </span>
+            </label>
+            <textarea
+              id="instructions"
+              className="textarea"
+              rows={5}
+              placeholder="For example: Never send a message without showing me first."
+              value={instructions ?? settings?.instructions ?? ""}
+              onChange={(e) => {
+                setInstructions(e.target.value);
+                setSaved(null);
+              }}
+            />
+            <div className="row-controls end">
+              {saved === "agent" && instructions === null && (
+                <p className="row-note good inline">
+                  <CheckIcon size={16} />
+                  Saved
+                </p>
+              )}
+              <button
+                type="submit"
+                className="secondary small"
+                disabled={
+                  busy !== null ||
+                  instructions === null ||
+                  instructions.trim() === (settings?.instructions ?? "")
+                }
+              >
+                {busy === "agent" ? "Saving…" : "Save instructions"}
+              </button>
+            </div>
+          </form>
+
+          <div className="list-row wrap">
+            <div className="row-text">
+              <strong>Allow the agent to type</strong>
+              <span>
+                Off, the agent types only text you wrote in your request or in
+                the instructions above, and nothing of its own. Turn it on to
+                let it write replies and searches itself.
+              </span>
+            </div>
+            <Switch
+              on={settings?.allowTyping ?? false}
+              label="Allow the agent to type"
+              disabled={busy !== null || settings === null}
+              onChange={(allowTyping) => void save("agent", { allowTyping })}
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="group" aria-labelledby="advanced-title">
         <h2 id="advanced-title" className="eyebrow">
           Advanced
@@ -246,8 +326,9 @@ export function Preferences({ app }: { app: Edart }) {
         </h2>
         <div className="card prose">
           <p>
-            While the agent works, each step sends your request, a screenshot of
-            the iPhone and the steps so far to the service address above.
+            While the agent works, each step sends your request, your standing
+            instructions, a screenshot of the iPhone, the text read from that
+            screenshot and the steps so far to the service address above.
             Controlling the iPhone yourself sends nothing anywhere.
           </p>
           <p>

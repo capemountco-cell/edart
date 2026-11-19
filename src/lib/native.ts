@@ -177,6 +177,10 @@ export interface SettingsView {
   apiBaseIsDefault: boolean;
   /** Where the settings file is. */
   path: string;
+  /** Sent to the agent with every step; empty when there are none. */
+  instructions: string;
+  /** The agent may type text of its own, not only what the user wrote. */
+  allowTyping: boolean;
 }
 
 /**
@@ -186,6 +190,8 @@ export interface SettingsView {
 export interface SettingsChange {
   token?: string;
   apiBase?: string;
+  instructions?: string;
+  allowTyping?: boolean;
 }
 
 /** Mirrors `edart_core::agent::ConnectionTest`. */
@@ -230,4 +236,102 @@ export const clearAgent = () => call<void>("agent_clear");
 export async function onAgentChanged(handler: () => void): Promise<() => void> {
   if (!nativeAvailable()) return () => {};
   return listen("agent-changed", () => handler());
+}
+
+/** Mirrors `edart_core::ledger::Counters`. */
+export interface TradingCounters {
+  /** The local date, "2026-11-19". */
+  day: string;
+  trades: number;
+  spentCents: number;
+}
+
+/** Mirrors `edart_core::guard::BuyInfo`. */
+export interface BuyInfo {
+  side: "up" | "down" | null;
+  stakeCents: number;
+  market: string;
+}
+
+/** Mirrors `edart_core::trading::PendingBuy`. */
+export interface PendingBuy {
+  /** "Up, $0.10, ZEC 15 min". */
+  summary: string;
+  buy: BuyInfo;
+  secondsLeft: number;
+}
+
+/** Mirrors `edart_core::trading::TradingView`. */
+export interface TradingView {
+  enabled: boolean;
+  stakeCents: number;
+  maxTradesPerDay: number;
+  maxLossCentsPerDay: number;
+  confirmEachBuy: boolean;
+  maxSteps: number;
+  /** The one app the agent may use. */
+  app: string;
+  /** Buys are allowed only in this market; empty is any market. */
+  market: string;
+  /** The most that can be lost in a day under these rules. */
+  worstCaseCents: number;
+  /** "Kalshi only · $0.10 · 3/10 buys · $0.30/$1.00". */
+  summary: string;
+  playbook: string;
+  playbookIsDefault: boolean;
+  today: TradingCounters;
+  tradesLeft: number;
+  /** Why the ledger can't be read; nothing can be bought until it can. */
+  ledgerError: string | null;
+  /** A buy waiting for the user's yes or no. */
+  pending: PendingBuy | null;
+}
+
+/**
+ * Mirrors `edart_core::trading::TradingChange`. A field left out is left
+ * alone. Out-of-range values are refused with a sentence.
+ */
+export interface TradingChange {
+  enabled?: boolean;
+  stakeCents?: number;
+  maxTradesPerDay?: number;
+  maxLossCentsPerDay?: number;
+  confirmEachBuy?: boolean;
+  maxSteps?: number;
+  app?: string;
+  market?: string;
+  /** Empty goes back to the built-in playbook. */
+  playbook?: string;
+}
+
+/** Mirrors `edart_core::ledger::LedgerEvent`. */
+export interface LedgerEvent {
+  /** Seconds since 1970. */
+  time: number;
+  day: string;
+  kind: "buy" | "sell" | "blocked";
+  side?: "up" | "down";
+  stakeCents: number;
+  market?: string;
+  reason?: string;
+}
+
+export const getTrading = () => call<TradingView>("trading_get");
+/** Change the trading rules. They hold from the next gesture on. */
+export const setTrading = (change: TradingChange) =>
+  call<TradingView>("trading_set", { change });
+/** The newest lines of the trading ledger, newest first. */
+export const tradingLedger = () => call<LedgerEvent[]>("trading_ledger");
+/** Answer the buy that is waiting for approval. */
+export const confirmTrade = (approve: boolean) =>
+  call<void>("trading_confirm", { approve });
+/**
+ * Call `handler` whenever the trading rules, the ledger or a pending
+ * confirmation change. Returns a function that stops listening.
+ */
+export async function onTradingChanged(
+  handler: () => void,
+): Promise<() => void> {
+  if (!nativeAvailable()) return () => {};
+  return listen("trading-changed", () => handler());
 }

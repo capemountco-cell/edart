@@ -153,6 +153,21 @@ export function Control({
           </header>
         )}
 
+        {app.trading?.enabled && (
+          <button
+            type="button"
+            className="rails"
+            title="Open the trading rules"
+            onClick={() => go("trading")}
+          >
+            <span className="pill pill-ok">
+              <span className="pill-dot" aria-hidden="true" />
+              Trading rails on
+            </span>
+            <span className="rails-summary">{app.trading.summary}</span>
+          </button>
+        )}
+
         <div className="stage-body">
           <Mirror
             mirror={app.mirror}
