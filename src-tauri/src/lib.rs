@@ -12,6 +12,9 @@ mod ble;
 #[cfg(target_os = "macos")]
 mod ble_central;
 
+// MCP connector: the local server AI tools use to reach the iPhone.
+mod mcp;
+
 #[cfg(target_os = "macos")]
 mod usb;
 #[cfg(not(target_os = "macos"))]
@@ -157,7 +160,9 @@ fn run_steps(app: &AppHandle, steps: Vec<Step>) -> Result<(), String> {
 /// Build and run the application.
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_app| {
+        .setup(|app| {
+            // MCP connector.
+            mcp::start(app.handle());
             // Watching the cable asks nothing of the user, so it starts
             // with the app.
             usb::start();
@@ -181,7 +186,10 @@ pub fn run() {
             usb_status,
             usb_enable_developer_mode,
             usb_prepare,
-            perform
+            perform,
+            // MCP connector.
+            mcp::mcp_status,
+            mcp::mcp_set_enabled
         ])
         .run(tauri::generate_context!())
         .expect("failed to start the application");
