@@ -180,6 +180,16 @@ pub fn screenshot() -> Option<(Vec<u8>, Screen)> {
     Some((jpeg::encode(&frame, SCREENSHOT_QUALITY)?, screen))
 }
 
+/// The newest frame itself, its number, and how long ago it arrived.
+/// `None` unless the mirror is live.
+pub fn frame() -> Option<(Arc<Rgb>, u64, Duration)> {
+    status().screen()?;
+    with_shared(|s| {
+        let age = s.last_kept.map(|at| at.elapsed())?;
+        Some((s.frame.clone()?, s.seq, age))
+    })
+}
+
 /// Switch mirroring on. Asks for Camera access the first time. Safe to
 /// call again.
 pub fn start() {

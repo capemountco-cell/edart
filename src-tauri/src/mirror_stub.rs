@@ -21,3 +21,11 @@ pub fn preview_jpeg() -> Option<Vec<u8>> {
 pub fn screenshot() -> Option<(Vec<u8>, Screen)> {
     None
 }
+
+pub fn frame() -> Option<(
+    std::sync::Arc<edart_core::image::Rgb>,
+    u64,
+    std::time::Duration,
+)> {
+    None
+}

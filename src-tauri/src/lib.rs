@@ -28,6 +28,15 @@ mod http;
 mod http;
 
 mod agent;
+mod clock;
+mod trading;
+
+// Reading the screen's text, for the trading rails.
+#[cfg(target_os = "macos")]
+mod ocr;
+#[cfg(not(target_os = "macos"))]
+#[path = "ocr_stub.rs"]
+mod ocr;
 
 #[cfg(target_os = "macos")]
 mod usb;
@@ -154,8 +163,20 @@ pub(crate) fn control_ready() -> bool {
     route(usb::is_ready(), ble::status().subscribed).is_ok()
 }
 
-/// [`perform`] for callers already off the main thread (the agent).
+/// [`perform`] for callers already off the main thread (the MCP
+/// connector). With trading mode on, the gesture is checked first and a
+/// refusal comes back as the error.
 pub(crate) fn perform_blocking(
+    app: &AppHandle,
+    gesture: &Gesture,
+    screen: Screen,
+) -> Result<(), String> {
+    trading::perform(app, gesture, screen, trading::Source::Other).map_err(|e| e.message())
+}
+
+/// Send a gesture to the iPhone without asking the trading rails. Only
+/// `trading::perform` calls this.
+pub(crate) fn perform_unchecked(
     app: &AppHandle,
     gesture: &Gesture,
     screen: Screen,
@@ -215,7 +236,7 @@ fn open_camera_settings() -> Result<(), String> {
 }
 
 /// Where the settings file lives: the app's own config folder.
-fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn settings_path(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_config_dir()
         .map(|dir| dir.join("settings.json"))
@@ -280,7 +301,8 @@ fn agent_status() -> AgentStatus {
 }
 
 /// Start the agent on a goal. Fails with a sentence when the token, the
-/// control link or the screen mirror is missing.
+/// control link or the screen mirror is missing. With trading mode on the
+/// goal may be empty: the playbook is the goal.
 #[tauri::command]
 fn agent_start(app: AppHandle, goal: String) -> Result<(), String> {
     let current = settings::load(&settings_path(&app)?)?;
@@ -397,6 +419,11 @@ pub fn run() {
             agent_start,
             agent_stop,
             agent_clear,
+            // Trading rails.
+            trading::trading_get,
+            trading::trading_set,
+            trading::trading_ledger,
+            trading::trading_confirm,
             // MCP connector.
             mcp::mcp_status,
             mcp::mcp_set_enabled
