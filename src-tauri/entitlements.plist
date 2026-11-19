@@ -25,5 +25,14 @@
     -->
     <key>com.apple.security.cs.disable-library-validation</key>
     <true/>
+
+    <!--
+      Screen mirroring reads the iPhone's screen through AVFoundation, where
+      a USB iPhone is a capture device. Under the hardened runtime, capture
+      devices are refused to an app without this entitlement: no prompt is
+      shown and no device is listed.
+    -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
 </dict>
 </plist>

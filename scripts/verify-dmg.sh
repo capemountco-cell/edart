@@ -35,6 +35,18 @@ defaults read "$APP/Contents/Info" NSBluetoothAlwaysUsageDescription >/dev/null 
   || fail "the app's Info.plist has no NSBluetoothAlwaysUsageDescription." \
   "src-tauri/Info.plist was not merged; the app would crash on first Bluetooth use."
 
+# The same goes for the camera: the screen mirror reads a USB iPhone as a
+# capture device, and macOS kills an app that asks without a description.
+defaults read "$APP/Contents/Info" NSCameraUsageDescription >/dev/null 2>&1 \
+  || fail "the app's Info.plist has no NSCameraUsageDescription." \
+  "src-tauri/Info.plist was not merged; the app would crash when the screen mirror starts."
+
+# Under the hardened runtime, capture devices are refused without the
+# camera entitlement: no prompt, no iPhone screen, and no error.
+codesign -d --entitlements - "$APP" 2>/dev/null | grep -aq "com.apple.security.device.camera" \
+  || fail "the app is signed without the com.apple.security.device.camera entitlement." \
+  "src-tauri/entitlements.plist was not applied; the screen mirror would never see an iPhone."
+
 codesign --verify --deep --strict "$APP" 2>/dev/null \
   || fail "the app's signature does not verify." \
   "macOS reports an app with a broken signature as \"damaged\" once downloaded." \
@@ -44,5 +56,7 @@ SIGNATURE="$(codesign -dv "$APP" 2>&1 | grep -E '^(Signature|Authority)=' | head
 echo "  image checksum   ok"
 echo "  contents         $PRODUCT_NAME.app, Applications link"
 echo "  bluetooth text   ok"
+echo "  camera text      ok"
+echo "  camera entitled  ok"
 echo "  signature        ok (${SIGNATURE:-unknown})"
 echo "  architectures    $(lipo -archs "$APP/Contents/MacOS/"* 2>/dev/null | head -1)"

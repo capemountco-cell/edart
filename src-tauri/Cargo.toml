@@ -28,3 +28,9 @@ block2 = "0.6.2"
 objc2 = "0.6.5"
 objc2-core-bluetooth = { version = "0.3.2", default-features = false, features = ["std", "alloc", "bitflags", "dispatch2", "CBPeripheralManager", "CBManager", "CBAttribute", "CBCharacteristic", "CBService", "CBDescriptor", "CBUUID", "CBATTRequest", "CBCentral", "CBPeer", "CBAdvertisementData", "CBError", "CBCentralManager", "CBPeripheral"] }
 objc2-foundation = "0.3.2"
+# Screen mirroring: a USB iPhone is an AVFoundation capture device.
+dispatch2 = "0.3.1"
+objc2-av-foundation = { version = "0.3.2", default-features = false, features = ["std", "block2", "dispatch2", "objc2-core-media", "AVCaptureDevice", "AVCaptureInput", "AVCaptureOutputBase", "AVCaptureVideoDataOutput", "AVCaptureSession", "AVMediaFormat"] }
+objc2-core-media = { version = "0.3.2", default-features = false, features = ["std", "objc2-core-video", "CMSampleBuffer"] }
+objc2-core-video = { version = "0.3.2", default-features = false, features = ["std", "bitflags", "CVBase", "CVBuffer", "CVImageBuffer", "CVPixelBuffer", "CVReturn"] }
+objc2-core-foundation = { version = "0.3.2", default-features = false, features = ["std", "CFString"] }

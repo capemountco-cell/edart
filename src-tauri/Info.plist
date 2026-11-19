@@ -9,5 +9,14 @@
     -->
     <key>NSBluetoothAlwaysUsageDescription</key>
     <string>Edart acts as a Bluetooth mouse and keyboard so you and your AI agent can tap and type on your iPhone.</string>
+
+    <!--
+      Screen mirroring. macOS lists a USB-connected iPhone as a camera whose
+      picture is the phone's screen, so reading it needs Camera access. As
+      with Bluetooth, macOS kills the app the first time it asks for the
+      camera if this description is missing.
+    -->
+    <key>NSCameraUsageDescription</key>
+    <string>Edart shows your iPhone’s screen. macOS lists an iPhone on a USB cable as a camera, so it asks for Camera access. Edart does not use this Mac’s own camera.</string>
 </dict>
 </plist>
