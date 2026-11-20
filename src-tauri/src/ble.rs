@@ -12,7 +12,9 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Mutex, OnceLock};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+use dispatch2::{DispatchQueue, DispatchTime};
 
 use edart_core::gatt::{self, CharSpec, ServiceSpec, Value};
 use edart_core::status::BluetoothStatus;
@@ -30,6 +32,11 @@ use objc2_foundation::{NSArray, NSData, NSDictionary, NSError, NSString};
 /// Most reports kept while CoreBluetooth's send queue is full. Pointer
 /// reports go stale fast; replaying old ones only makes the pointer jump.
 const MAX_PENDING: usize = 64;
+/// How long a phone that read HID Information gets to start listening
+/// before Edart decides it is holding an old setup.
+const STALE_CHECK: Duration = Duration::from_secs(4);
+/// Least time between two Service Changed nudges to the same phone.
+const NUDGE_EVERY: Duration = Duration::from_secs(30);
 
 static STATUS: Mutex<Option<BluetoothStatus>> = Mutex::new(None);
 
@@ -96,8 +103,15 @@ struct Peripheral {
     service_changed: Option<Retained<CBMutableCharacteristic>>,
     /// Phones subscribed to Service Changed.
     sc_subscribers: HashSet<String>,
-    /// Phones already sent a Service Changed this session.
-    sc_sent: HashSet<String>,
+    /// When each phone was last sent a Service Changed.
+    sc_sent: HashMap<String, Instant>,
+    /// Phones that read HID Information, checked again after
+    /// [`STALE_CHECK`] to see whether they started listening.
+    watching: HashMap<String, Retained<CBCentral>>,
+    /// This launch's Database Hash, so a reinstalled Edart looks new.
+    db_hash: [u8; 16],
+    /// macOS refused Generic Attribute with the hash; publish it without.
+    hash_refused: bool,
 }
 
 thread_local! {
@@ -133,7 +147,10 @@ define_class!(
             let advertising = unsafe { manager.isAdvertising() };
             let message = error.map(|e| e.localizedDescription().to_string());
             match &message {
-                None => log("advertising"),
+                None => log(format!(
+                    "advertising: iPhones can now find “{}” in AssistiveTouch",
+                    gatt::ADVERTISED_NAME
+                )),
                 Some(m) => log(format!("advertising failed: {m}")),
             }
             update_status(|s| {
@@ -239,7 +256,10 @@ pub fn start(mtm: MainThreadMarker) {
             pending: VecDeque::new(),
             service_changed: None,
             sc_subscribers: HashSet::new(),
-            sc_sent: HashSet::new(),
+            sc_sent: HashMap::new(),
+            watching: HashMap::new(),
+            db_hash: fresh_database_hash(),
+            hash_refused: false,
         });
     });
     log("started");
@@ -263,10 +283,12 @@ pub fn pause() {
             p.service_changed = None;
             p.sc_subscribers.clear();
             p.sc_sent.clear();
+            p.watching.clear();
         }
     });
     update_status(|s| {
         s.paused = true;
+        s.refreshing = false;
         s.published = false;
         s.advertising = false;
         s.subscribed = false;
@@ -332,7 +354,12 @@ fn rebuild() {
             p.service_changed = None;
             p.sc_subscribers.clear();
             p.sc_sent.clear();
-            p.to_add = gatt::services().into();
+            p.watching.clear();
+            let mut services = gatt::services(p.db_hash);
+            if p.hash_refused {
+                services[0] = gatt::generic_attribute(None);
+            }
+            p.to_add = services.into();
         }
     });
     update_status(|s| {
@@ -340,6 +367,7 @@ fn rebuild() {
         s.advertising = false;
         s.subscribed = false;
         s.phone_seen = false;
+        s.refreshing = false;
         s.failed_services.clear();
         s.error = None;
     });
@@ -441,6 +469,25 @@ fn on_service_added(service: &CBService, error: Option<&NSError>) {
             e.localizedDescription()
         )),
     }
+    if error.is_some() && id.to_uppercase().contains("1801") {
+        // Most likely the Database Hash. Service Changed matters more:
+        // publish Generic Attribute again without the hash.
+        let retry = PERIPHERAL.with(|cell| {
+            let mut borrow = cell.borrow_mut();
+            let p = borrow.as_mut()?;
+            if p.hash_refused {
+                return None;
+            }
+            p.hash_refused = true;
+            p.to_add.push_front(gatt::generic_attribute(None));
+            Some(())
+        });
+        if retry.is_some() {
+            log("publishing Generic Attribute again without the Database Hash");
+            add_next();
+            return;
+        }
+    }
     if let Some(error) = error {
         // Keep going: an optional service being refused must not stop
         // advertising. A refused HID service shows up in the status.
@@ -459,8 +506,16 @@ fn start_advertising() {
         let borrow = cell.borrow();
         let Some(p) = borrow.as_ref() else { return };
         if unsafe { p.manager.isAdvertising() } {
+            log(format!(
+                "already advertising as “{}”",
+                gatt::ADVERTISED_NAME
+            ));
             return;
         }
+        log(format!(
+            "asking macOS to advertise as “{}” (keyboard and mouse)",
+            gatt::ADVERTISED_NAME
+        ));
         // Name and the 16-bit HID UUID only: more overflows the 31-byte
         // packet and the phone spins forever in its device list.
         let name = NSString::from_str(gatt::ADVERTISED_NAME);
@@ -506,6 +561,9 @@ fn on_read(manager: &CBPeripheralManager, request: &CBATTRequest) {
         unsafe { request.offset() },
         who(&central)
     ));
+    if uuid_of(&ch) == gatt::short(gatt::CHAR_HID_INFO) {
+        watch_for_stale_setup(central.clone());
+    }
     let value = PERIPHERAL.with(|cell| {
         let borrow = cell.borrow();
         let p = borrow.as_ref()?;
@@ -570,13 +628,21 @@ fn on_subscription(central: &CBCentral, ch: &CBCharacteristic, subscribed: bool)
         Some(p.subscribers.values().any(|s| !s.is_empty()))
     });
     if let Some(any) = any {
+        let mut refreshed = false;
         update_status(|s| {
             // Losing the last subscriber means the phone went away.
             if s.subscribed && !any {
                 s.phone_seen = false;
             }
             s.subscribed = any;
+            if any && s.refreshing {
+                s.refreshing = false;
+                refreshed = true;
+            }
         });
+        if refreshed {
+            log("the iPhone refreshed its copy of Edart and is listening");
+        }
     }
 }
 
@@ -598,25 +664,64 @@ fn on_writes(requests: &NSArray<CBATTRequest>) {
                 .unwrap_or(false)
         });
         if is_control {
-            recover_stale_cache(&central);
+            recover_stale_cache(&central, "wrote the Control Point");
         }
     }
 }
 
-/// A bonded phone that trusts a stale copy of the Mac's services writes the
-/// Control Point but never subscribes to input. Service Changed makes it
-/// rediscover. Sent once per phone per session.
-fn recover_stale_cache(central: &CBCentral) {
+/// A phone that read HID Information should subscribe to input within a
+/// moment. Check again after [`STALE_CHECK`]; one that still has not is
+/// holding an old copy of Edart's services (typically after Edart was
+/// reinstalled) and is told to look again.
+fn watch_for_stale_setup(central: Retained<CBCentral>) {
+    let id = unsafe { central.identifier().UUIDString() }.to_string();
+    let first = PERIPHERAL.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        let p = borrow.as_mut()?;
+        Some(p.watching.insert(id.clone(), central).is_none())
+    });
+    if first != Some(true) {
+        return;
+    }
+    let Ok(when) = DispatchTime::try_from(STALE_CHECK) else {
+        return;
+    };
+    // The main queue is where every other callback runs, so the
+    // peripheral is reachable from the closure.
+    let _ = DispatchQueue::main().after(when, move || check_stale_setup(id));
+}
+
+fn check_stale_setup(id: String) {
+    let central = PERIPHERAL.with(|cell| {
+        let mut borrow = cell.borrow_mut();
+        let p = borrow.as_mut()?;
+        let central = p.watching.remove(&id)?;
+        let listening = p.subscribers.values().any(|s| s.contains(&id));
+        (!listening).then_some(central)
+    });
+    if let Some(central) = central {
+        recover_stale_cache(&central, "read HID Information but never subscribed");
+    }
+}
+
+/// A bonded phone that trusts a stale copy of the Mac's services reads or
+/// writes a little but never subscribes to input. Service Changed makes it
+/// rediscover. Sent at most every [`NUDGE_EVERY`] per phone.
+fn recover_stale_cache(central: &CBCentral, why: &str) {
     let sent = PERIPHERAL.with(|cell| {
         let mut borrow = cell.borrow_mut();
         let p = borrow.as_mut()?;
         let id = unsafe { central.identifier().UUIDString() }.to_string();
         let has_input = p.subscribers.values().any(|s| s.contains(&id));
-        if has_input || p.sc_sent.contains(&id) {
+        let recent = p
+            .sc_sent
+            .get(&id)
+            .is_some_and(|t| t.elapsed() < NUDGE_EVERY);
+        if has_input || recent {
             return None;
         }
         let ch = p.service_changed.clone()?;
-        p.sc_sent.insert(id.clone());
+        p.sc_sent.insert(id.clone(), Instant::now());
         let subscribed = p.sc_subscribers.contains(&id);
         let centrals = NSArray::from_slice(&[central]);
         let ok = unsafe {
@@ -630,11 +735,23 @@ fn recover_stale_cache(central: &CBCentral) {
         Some((ok, subscribed))
     });
     if let Some((ok, subscribed)) = sent {
+        update_status(|s| s.refreshing = true);
         log(format!(
-            "stale cache on {}: sent Service Changed (queued {ok}, phone subscribed {subscribed})",
+            "old setup on {} ({why}): sent Service Changed (queued {ok}, phone listening for it {subscribed})",
             who(central)
         ));
     }
+}
+
+/// A Database Hash that differs on every launch.
+fn fresh_database_hash() -> [u8; 16] {
+    use std::hash::{BuildHasher, Hasher};
+    let random = |n: u64| {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u64(n);
+        h.finish()
+    };
+    gatt::database_hash(((random(1) as u128) << 64) | random(2) as u128)
 }
 
 /// Send one input report. Main thread only. Returns false when there is no

@@ -22,6 +22,10 @@ pub struct BluetoothStatus {
     /// The user paused Edart: its keyboard-and-mouse services are taken
     /// down so the iPhone is free, but the pairing is kept for Resume.
     pub paused: bool,
+    /// The iPhone read Edart's setup but never started listening: it is
+    /// holding an old copy from before Edart was reinstalled, and Edart
+    /// has told it to look again.
+    pub refreshing: bool,
     /// The name the iPhone lists Edart under: the Mac's computer name, not
     /// "Edart" (iOS shows the device, not the app).
     pub mac_name: Option<String>,
@@ -59,6 +63,7 @@ pub enum Phase {
     Broken,
     WaitingForPhone,
     Pairing,
+    Refreshing,
     Connected,
     Paused,
 }
@@ -83,6 +88,8 @@ impl BluetoothStatus {
         }
         if self.subscribed {
             Phase::Connected
+        } else if self.refreshing {
+            Phase::Refreshing
         } else if self.phone_seen {
             Phase::Pairing
         } else if self.published && self.advertising {
@@ -168,6 +175,16 @@ mod tests {
         s.paused = true;
         assert_eq!(s.phase(), Phase::Paused);
         s.paused = false;
+        assert_eq!(s.phase(), Phase::Connected);
+    }
+
+    #[test]
+    fn a_phone_with_an_old_setup_shows_as_refreshing_until_it_listens() {
+        let mut s = on();
+        s.phone_seen = true;
+        s.refreshing = true;
+        assert_eq!(s.phase(), Phase::Refreshing);
+        s.subscribed = true;
         assert_eq!(s.phase(), Phase::Connected);
     }
 
