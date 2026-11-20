@@ -33,6 +33,7 @@ export type Phase =
   | "broken"
   | "waitingForPhone"
   | "pairing"
+  | "refreshing"
   | "connected"
   | "paused";
 
@@ -46,6 +47,8 @@ export interface BluetoothStatus {
   subscribed: boolean;
   phoneSeen: boolean;
   paused: boolean;
+  /** The iPhone holds an old copy of Edart's setup and was told to look again. */
+  refreshing: boolean;
   macName: string | null;
   failedServices: string[];
   error: string | null;

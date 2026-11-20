@@ -47,6 +47,7 @@ pub const SERVICE_DEVICE_INFO: u16 = 0x180A;
 pub const SERVICE_BATTERY: u16 = 0x180F;
 
 pub const CHAR_SERVICE_CHANGED: u16 = 0x2A05;
+pub const CHAR_DATABASE_HASH: u16 = 0x2B2A;
 pub const CHAR_HID_INFO: u16 = 0x2A4A;
 pub const CHAR_REPORT_MAP: u16 = 0x2A4B;
 pub const CHAR_CONTROL_POINT: u16 = 0x2A4C;
@@ -129,19 +130,57 @@ fn input_report(id: u8) -> CharSpec {
     }
 }
 
+/// A Database Hash for this launch, made from `seed`. A phone that
+/// supports GATT caching compares it with the one it remembers; a new
+/// value tells it that its copy of Edart's services is out of date, as it
+/// is after Edart is reinstalled.
+pub fn database_hash(seed: u128) -> [u8; 16] {
+    // Spread the seed so nearby seeds give unrelated hashes (splitmix64).
+    let mix = |mut z: u64| {
+        z = z.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^ (z >> 31)
+    };
+    let lo = mix(seed as u64);
+    let hi = mix((seed >> 64) as u64 ^ lo);
+    let mut out = [0; 16];
+    out[..8].copy_from_slice(&lo.to_le_bytes());
+    out[8..].copy_from_slice(&hi.to_le_bytes());
+    out
+}
+
+/// Generic Attribute (0x1801): Service Changed, plus the Database Hash
+/// when one is given. macOS may refuse the hash; then the service is
+/// published again without it.
+pub fn generic_attribute(db_hash: Option<[u8; 16]>) -> ServiceSpec {
+    let mut characteristics = vec![CharSpec {
+        uuid: CHAR_SERVICE_CHANGED,
+        properties: PROP_INDICATE,
+        permissions: PERM_READ,
+        value: Value::None,
+        report: None,
+    }];
+    if let Some(hash) = db_hash {
+        characteristics.push(CharSpec {
+            uuid: CHAR_DATABASE_HASH,
+            properties: PROP_READ,
+            permissions: PERM_READ,
+            // Served live, so the phone reading it shows in the log.
+            value: Value::Dynamic(hash.to_vec()),
+            report: None,
+        });
+    }
+    ServiceSpec {
+        uuid: SERVICE_GATT,
+        characteristics,
+    }
+}
+
 /// The services to publish, in publishing order.
-pub fn services() -> Vec<ServiceSpec> {
+pub fn services(db_hash: [u8; 16]) -> Vec<ServiceSpec> {
     vec![
-        ServiceSpec {
-            uuid: SERVICE_GATT,
-            characteristics: vec![CharSpec {
-                uuid: CHAR_SERVICE_CHANGED,
-                properties: PROP_INDICATE,
-                permissions: PERM_READ,
-                value: Value::None,
-                report: None,
-            }],
-        },
+        generic_attribute(Some(db_hash)),
         ServiceSpec {
             uuid: SERVICE_HID,
             characteristics: vec![
@@ -227,6 +266,10 @@ pub fn services() -> Vec<ServiceSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn services() -> Vec<ServiceSpec> {
+        super::services(database_hash(7))
+    }
 
     fn hid_service() -> ServiceSpec {
         services()
@@ -323,6 +366,27 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn the_database_hash_is_served_live_and_changes_with_the_seed() {
+        let gatt = &services()[0];
+        let hash = gatt
+            .characteristics
+            .iter()
+            .find(|c| c.uuid == CHAR_DATABASE_HASH)
+            .expect("Generic Attribute carries a Database Hash");
+        assert_eq!(hash.properties, PROP_READ);
+        assert_eq!(hash.value, Value::Dynamic(database_hash(7).to_vec()));
+        assert_ne!(database_hash(7), database_hash(8));
+        assert_ne!(database_hash(1 << 64), database_hash(2 << 64));
+    }
+
+    #[test]
+    fn without_the_hash_only_service_changed_is_left() {
+        let gatt = generic_attribute(None);
+        assert_eq!(gatt.characteristics.len(), 1);
+        assert_eq!(gatt.characteristics[0].uuid, CHAR_SERVICE_CHANGED);
     }
 
     #[test]

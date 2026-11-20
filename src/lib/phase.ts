@@ -53,6 +53,12 @@ export function phaseCopy(
         detail:
           "Your iPhone found Edart, but the secure pairing didn’t complete. This usually means old pairing leftovers. Forget the device on both sides: on this Mac in System Settings › Bluetooth (leave that window open), and on the iPhone in AssistiveTouch › Devices › Bluetooth Devices › ⓘ › Forget This Device. Turn the iPhone’s Bluetooth off and on, press Restart Bluetooth here, then tap the Mac’s name on the iPhone and accept Pair on both.",
       };
+    case "refreshing":
+      return {
+        title: "Refreshing your iPhone’s copy of Edart",
+        detail:
+          "Your iPhone found Edart but is still using an old setup from before Edart was reinstalled. Edart has told it to look again; this usually takes a few seconds. If nothing changes within a minute, turn the iPhone’s Bluetooth off and on.",
+      };
     case "connected":
       return {
         title: "iPhone connected",

@@ -35,6 +35,7 @@ export const DEMO_BLUETOOTH: BluetoothStatus = {
   subscribed: true,
   phoneSeen: true,
   paused: false,
+  refreshing: false,
   macName: "Cape’s MacBook",
   failedServices: [],
   events: [

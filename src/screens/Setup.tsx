@@ -52,7 +52,12 @@ export function Setup({ app, go }: { app: Edart; go: (route: Route) => void }) {
   const btCopy = phaseCopy(btPhase, mac);
 
   const screenDone = mirrorPhase === "live" || mirrorPhase === "dark";
-  const btOn = ["waitingForPhone", "pairing", "connected"].includes(btPhase);
+  const btOn = [
+    "waitingForPhone",
+    "pairing",
+    "refreshing",
+    "connected",
+  ].includes(btPhase);
   const paired = app.bluetoothConnected;
   const screenState: StepState = screenDone ? "done" : "current";
   const bluetoothState: StepState = btOn
